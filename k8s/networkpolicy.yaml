@@ -1,0 +1,19 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: lantern-valkey
+  namespace: lantern-table
+spec:
+  podSelector:
+    matchLabels:
+      app: lantern-valkey
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: lantern-table
+      ports:
+        - protocol: TCP
+          port: 6379

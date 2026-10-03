@@ -1,0 +1,64 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: lantern-valkey
+  namespace: lantern-table
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: lantern-valkey
+  template:
+    metadata:
+      labels:
+        app: lantern-valkey
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: valkey
+          image: valkey/valkey:8.1-alpine
+          args: ["valkey-server", "--save", "", "--appendonly", "no", "--protected-mode", "no"]
+          ports:
+            - name: redis
+              containerPort: 6379
+          readinessProbe:
+            exec:
+              command: ["valkey-cli", "ping"]
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          resources:
+            requests:
+              cpu: 10m
+              memory: 24Mi
+            limits:
+              cpu: 150m
+              memory: 96Mi
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 999
+            runAsGroup: 999
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: data
+              mountPath: /data
+      volumes:
+        - name: data
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: lantern-valkey
+  namespace: lantern-table
+spec:
+  selector:
+    app: lantern-valkey
+  ports:
+    - name: redis
+      port: 6379
+      targetPort: redis

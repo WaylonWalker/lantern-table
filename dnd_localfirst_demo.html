@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+<meta name="theme-color" content="#0d1017" />
+<title>Lantern Table — local-first D&D</title>
+<link rel="stylesheet" href="/assets/app.css" />
+</head>
+<body>
+<canvas id="shaderCanvas" class="ambient-canvas shader-canvas" aria-hidden="true"></canvas>
+<canvas id="fxCanvas" class="ambient-canvas fx-canvas" aria-hidden="true"></canvas>
+<div id="lanternGlow" class="lantern-glow" aria-hidden="true"></div>
+<div id="stormFlash" class="storm-flash" aria-hidden="true"></div>
+
+<div id="wizard" class="wizard-shell hidden" role="dialog" aria-modal="true" aria-labelledby="wizardTitle">
+  <div class="wizard-card spring-surface">
+    <div class="wizard-top">
+      <div class="brand-mark"><img src="/assets/icons/game/dungeon-gate.svg" alt="" /></div>
+      <div><div class="eyebrow">Start fast · change anything later</div><h1 id="wizardTitle">What kind of table are we opening?</h1></div>
+    </div>
+    <p class="lede">Pick a starting shape. Lantern Table only asks for what the first scene needs; the DM fills in details lazily as you play.</p>
+    <div id="presetGrid" class="preset-grid"></div>
+    <details class="wizard-customize">
+      <summary>Customize before starting</summary>
+      <div class="form-grid two">
+        <label>Campaign name<input id="wizName" value="The Black Lantern" /></label>
+        <label>Difficulty<select id="wizDifficulty"><option>Relaxed</option><option selected>Normal</option><option>Dangerous</option><option>Brutal</option></select></label>
+        <label>Rules style<select id="wizRules"><option>Story first</option><option selected>Balanced</option><option>Rules strict</option></select></label>
+        <label>DM style<select id="wizDm"><option>Helpful</option><option selected>Neutral</option><option>Mischievous</option><option>Ruthless</option></select></label>
+        <label>Description<select id="wizDesc"><option>Concise</option><option selected>Balanced</option><option>Cinematic</option></select></label>
+        <label>Character creation<select id="wizChar"><option selected>Quick</option><option>Guided</option><option>Full</option></select></label>
+      </div>
+    </details>
+    <div class="wizard-actions"><button id="wizardStart" class="button primary large">Open the table</button><span class="muted">You can edit these in Campaign Settings later.</span></div>
+  </div>
+</div>
+
+<div class="app-shell" id="appShell">
+  <aside class="sidebar left-rail glass">
+    <button class="brand" data-view="play" aria-label="Lantern Table home">
+      <span class="brand-mark"><img src="/assets/icons/game/dungeon-gate.svg" alt="" /></span>
+      <span><b>Lantern Table</b><small id="campaignMini">local-first D&D</small></span>
+    </button>
+    <nav class="nav-list" aria-label="Primary">
+      <button data-view="play" class="active"><img src="/assets/icons/tabler/message-circle.svg" alt=""/><span>Play</span></button>
+      <button data-view="campaign"><img src="/assets/icons/tabler/book-2.svg" alt=""/><span>Campaign</span></button>
+      <button data-view="character"><img src="/assets/icons/tabler/users.svg" alt=""/><span>Character</span></button>
+      <button data-view="timeline"><img src="/assets/icons/tabler/timeline.svg" alt=""/><span>Timeline</span></button>
+      <button data-view="map"><img src="/assets/icons/tabler/map.svg" alt=""/><span>Map & Draw</span></button>
+      <button data-view="gallery"><img src="/assets/icons/tabler/photo.svg" alt=""/><span>Images</span></button>
+      <button data-view="settings"><img src="/assets/icons/tabler/settings.svg" alt=""/><span>Settings</span></button>
+    </nav>
+    <div class="rail-status">
+      <div class="status-row"><span class="status-dot" id="saveDot"></span><span id="saveText">Saved locally</span></div>
+      <div class="status-row"><span class="status-dot dim" id="networkDot"></span><span id="networkText">Solo</span></div>
+    </div>
+  </aside>
+
+  <main class="main-pane">
+    <header class="topbar glass">
+      <div class="scene-title-wrap"><div class="eyebrow" id="sceneEyebrow">Current scene</div><h2 id="topSceneTitle">Lantern Room</h2></div>
+      <div class="top-actions">
+        <button id="themeQuick" class="icon-button" title="Atmosphere"><span aria-hidden="true">◐</span></button>
+        <button id="audioQuick" class="icon-button" title="Narration audio"><img src="/assets/icons/tabler/volume-2.svg" alt=""/></button>
+        <button id="tableQuick" class="button compact"><img src="/assets/icons/tabler/users.svg" alt=""/><span id="tableQuickLabel">Invite</span></button>
+      </div>
+    </header>
+
+    <section id="view-play" class="view active play-view">
+      <div id="sceneHero" class="scene-hero spring-surface">
+        <div><div class="eyebrow">Now</div><h1 id="sceneTitle">Lantern Room</h1><p id="sceneText">A warm room with an old oak table and too many stories waiting to happen.</p></div>
+        <div id="sceneBadges" class="scene-badges"></div>
+      </div>
+      <div id="transcript" class="transcript" aria-live="polite"></div>
+      <div id="toolShelf" class="tool-shelf"></div>
+      <div class="composer glass">
+        <textarea id="action" rows="2" placeholder="What do you do?" aria-label="Player action"></textarea>
+        <div class="composer-bottom">
+          <div id="diceStrip" class="dice-strip"></div>
+          <div class="composer-actions"><button id="stopStream" class="button ghost hidden">Stop</button><button id="send" class="button primary">Do it <span>↵</span></button></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="view-campaign" class="view content-view">
+      <div class="view-heading"><div><div class="eyebrow">Host controls</div><h1>Campaign</h1><p>Set direction, permissions, and table rules. Nothing here is permanent.</p></div><button id="reopenWizard" class="button">Quick presets</button></div>
+      <div class="card-grid two">
+        <article class="panel-card"><h3>Game style</h3><div class="form-grid" id="campaignSettingsForm"></div></article>
+        <article class="panel-card"><h3>Permissions</h3><p class="muted">Host is authoritative. Each player owns their character by default.</p><div id="permissionsForm" class="toggle-list"></div></article>
+        <article class="panel-card"><h3>Table access</h3><div id="multiplayerPanel"></div></article>
+        <article class="panel-card"><h3>World notes</h3><textarea id="journal" rows="12" placeholder="Facts the DM should preserve..."></textarea></article>
+      </div>
+    </section>
+
+    <section id="view-character" class="view content-view">
+      <div class="view-heading"><div><div class="eyebrow">Owned by you</div><h1>Character</h1><p>Your character can be edited by you; the game can propose mechanical changes.</p></div></div>
+      <div class="character-layout">
+        <article class="character-card panel-card">
+          <div class="portrait-slot" id="portraitSlot"><span>Portrait</span><button id="setPortrait" class="button compact">Choose image</button></div>
+          <div class="form-grid two" id="characterForm"></div>
+        </article>
+        <article class="panel-card"><h3>Party</h3><div id="partyList" class="party-list"></div></article>
+      </div>
+    </section>
+
+    <section id="view-timeline" class="view content-view">
+      <div class="view-heading"><div><div class="eyebrow">Campaign memory</div><h1>Timeline</h1><p>Who was where, what happened, and when. This same event log powers reconnect and catch-up.</p></div><div class="segmented"><button data-timeline-mode="events" class="active">Events</button><button data-timeline-mode="lanes">Player lanes</button></div></div>
+      <div id="timelineEvents" class="timeline-events"></div>
+      <div id="timelineLanes" class="timeline-lanes hidden"></div>
+    </section>
+
+    <section id="view-map" class="view content-view">
+      <div class="view-heading"><div><div class="eyebrow">Local canvas</div><h1>Map & Draw</h1><p>Sketch a room, clue, route, or battle map. Drawings are saved on your device and can be shared with the table.</p></div></div>
+      <div class="draw-shell panel-card">
+        <div class="draw-toolbar">
+          <button data-draw-tool="pen" class="active">✏ Pen</button><button data-draw-tool="erase">⌫ Erase</button>
+          <label>Size <input id="brushSize" type="range" min="2" max="28" value="5" /></label>
+          <label>Color <input id="brushColor" type="color" value="#e9b35f" /></label>
+          <button id="drawUndo">↶ Undo</button><button id="drawClear">Clear</button><button id="drawSave" class="button primary compact">Save drawing</button>
+        </div>
+        <canvas id="drawCanvas" width="1400" height="900"></canvas>
+      </div>
+    </section>
+
+    <section id="view-gallery" class="view content-view">
+      <div class="view-heading"><div><div class="eyebrow">Bring your own art</div><h1>Images & prompts</h1><p>Upload or draw images locally. When the DM thinks art would help, it can suggest a polished prompt for any generator you prefer.</p></div><label class="button"><img src="/assets/icons/tabler/upload.svg" alt=""/> Add image<input id="imageUpload" type="file" accept="image/*" hidden /></label></div>
+      <div id="promptCards" class="prompt-list"></div>
+      <div id="galleryGrid" class="gallery-grid"></div>
+    </section>
+
+    <section id="view-settings" class="view content-view">
+      <div class="view-heading"><div><div class="eyebrow">Local preferences</div><h1>Settings</h1><p>Visual and audio preferences live on this device. The DM can suggest atmosphere, but you stay in control.</p></div></div>
+      <div class="card-grid two">
+        <article class="panel-card"><h3>Appearance</h3><label>Color mode<select id="colorMode"><option value="follow">Follow DM theme</option><option value="dark">Prefer dark</option><option value="light">Prefer light</option></select></label><label>Theme<select id="themeSelect"></select></label><div class="toggle-row"><span><b>Let DM change atmosphere</b><small>Theme/effects can follow the story.</small></span><input id="dmThemeToggle" type="checkbox" checked /></div><div class="toggle-row"><span><b>Environmental effects</b><small>Snow, rain, dust, light, water and more.</small></span><input id="effectsToggle" type="checkbox" checked /></div><div class="toggle-row"><span><b>Motion</b><small>Physics-style springs and transitions.</small></span><input id="motionToggle" type="checkbox" checked /></div><label>Effect intensity<input id="effectIntensity" type="range" min="0" max="100" value="35" /></label><div id="effectPicker" class="effect-picker"></div></article>
+        <article class="panel-card"><h3>Narration</h3><label>Voice mode<select id="voiceMode"><option value="off">Off</option><option value="system">System voice · free</option><option value="kokoro">Kokoro local cinematic · free after download</option></select></label><label>Voice<select id="voiceSelect"></select></label><label>Style<select id="voiceStyle"><option value="normal">Normal</option><option value="creepy">Creepy</option><option value="ancient">Ancient</option><option value="urgent">Urgent</option></select></label><div class="toggle-row"><span><b>Auto-narrate DM</b><small>Speak complete sentences as they arrive.</small></span><input id="autoNarrate" type="checkbox" /></div><button id="testVoice" class="button">Test voice</button><div id="kokoroStatus" class="small-note">Kokoro downloads an open local TTS model on first use. WebGPU is preferred; WASM is the fallback.</div></article>
+        <article class="panel-card"><h3>AI Dungeon Master</h3><div id="aiPanel"></div></article>
+        <article class="panel-card"><h3>Local data</h3><p class="muted">Campaign state is stored in this browser. The public signaling service does not persist it.</p><div class="button-row"><button id="exportSave" class="button"><img src="/assets/icons/tabler/download.svg" alt=""/> Export campaign</button><label class="button"><img src="/assets/icons/tabler/upload.svg" alt=""/> Import campaign<input id="importSave" type="file" accept="application/json,.json,.lantern" hidden /></label><button id="resetSave" class="button danger">Reset</button></div><hr/><h4>Returning player pass</h4><p class="muted">A Player Pass carries your stable local player ID and character draft to another device. Treat it like a private table credential.</p><div class="button-row"><button id="exportPlayerPass" class="button">Export Player Pass</button><label class="button">Import Player Pass<input id="importPlayerPass" type="file" accept="application/json,.json,.lantern-player" hidden /></label></div></article>
+      </div>
+    </section>
+  </main>
+
+  <aside class="sidebar right-rail glass">
+    <section><div class="rail-heading"><span>Table</span><button id="copyInvite" class="mini-action">Copy invite</button></div><div id="presenceList" class="presence-list"></div></section>
+    <section><div class="rail-heading"><span>Next moves</span></div><div id="nextMoves" class="next-moves"></div></section>
+    <section><div class="rail-heading"><span>Active quests</span></div><div id="questList" class="quest-list"></div></section>
+    <section><div class="rail-heading"><span>Atmosphere</span></div><div id="atmosphereReadout" class="atmosphere-readout"></div></section>
+  </aside>
+
+  <nav class="mobile-nav glass" aria-label="Mobile primary">
+    <button data-view="play" class="active"><img src="/assets/icons/tabler/message-circle.svg" alt=""/><span>Play</span></button>
+    <button data-view="character"><img src="/assets/icons/tabler/users.svg" alt=""/><span>Hero</span></button>
+    <button data-view="timeline"><img src="/assets/icons/tabler/timeline.svg" alt=""/><span>History</span></button>
+    <button data-view="map"><img src="/assets/icons/tabler/map.svg" alt=""/><span>Map</span></button>
+    <button data-view="settings"><img src="/assets/icons/tabler/settings.svg" alt=""/><span>More</span></button>
+  </nav>
+</div>
+
+<div id="toastStack" class="toast-stack" aria-live="polite"></div>
+<div id="themeSheet" class="bottom-sheet hidden"><div class="sheet-backdrop" data-close-sheet></div><div class="sheet-card glass"><div class="sheet-handle"></div><h3>Atmosphere</h3><div id="quickThemeGrid" class="quick-theme-grid"></div></div></div>
+<div id="tableSheet" class="bottom-sheet hidden"><div class="sheet-backdrop" data-close-sheet></div><div class="sheet-card glass"><div class="sheet-handle"></div><h3>Table connection</h3><div id="tableSheetBody"></div></div></div>
+<input id="portraitUpload" type="file" accept="image/*" hidden />
+<script type="module" src="/assets/app.js"></script>
+</body>
+</html>

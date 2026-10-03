@@ -1,0 +1,112 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: lantern-table
+  namespace: lantern-table
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  minReadySeconds: 3
+  selector:
+    matchLabels:
+      app: lantern-table
+  template:
+    metadata:
+      labels:
+        app: lantern-table
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 90
+      imagePullSecrets:
+        - name: cluster-regcred
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 80
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    app: lantern-table
+                topologyKey: kubernetes.io/hostname
+      containers:
+        - name: app
+          image: registry.wayl.one/lantern-table:latest
+          imagePullPolicy: Always
+          env:
+            - name: LANTERN_MODE
+              value: public
+            - name: LANTERN_BIND
+              value: 0.0.0.0
+            - name: LANTERN_PORT
+              value: "8765"
+            - name: LANTERN_PUBLIC_ORIGIN
+              value: https://dnd.waylonwalker.com
+            - name: LANTERN_COMPANION_ORIGIN
+              value: http://127.0.0.1:8765
+            - name: REDIS_URL
+              value: redis://lantern-valkey:6379/0
+          envFrom:
+            - secretRef:
+                name: lantern-table-turn
+                optional: true
+          ports:
+            - name: http
+              containerPort: 8765
+          readinessProbe:
+            httpGet:
+              path: /health/ready
+              port: http
+            initialDelaySeconds: 2
+            periodSeconds: 5
+            failureThreshold: 2
+          livenessProbe:
+            httpGet:
+              path: /health/live
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 20
+          lifecycle:
+            preStop:
+              exec:
+                command:
+                  - python
+                  - -c
+                  - |
+                    import time, urllib.request
+                    try:
+                        urllib.request.urlopen(urllib.request.Request('http://127.0.0.1:8765/internal/drain', method='POST'), timeout=2).read()
+                    except Exception:
+                        pass
+                    time.sleep(5)
+          resources:
+            requests:
+              cpu: 25m
+              memory: 72Mi
+            limits:
+              cpu: 750m
+              memory: 320Mi
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: config
+              mountPath: /home/lantern/.config
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        - name: config
+          emptyDir: {}

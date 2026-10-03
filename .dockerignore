@@ -1,0 +1,11 @@
+.git
+.gitignore
+__pycache__/
+*.pyc
+*.zip
+.env
+.env.*
+.kube/
+k8s/
+README.md
+justfile

@@ -1,0 +1,10 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: lantern-table
+  namespace: lantern-table
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: lantern-table
