@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
 <meta name="theme-color" content="#0d1017" />
 <title>Lantern Table — local-first D&D</title>
-<link rel="stylesheet" href="/assets/app.css" />
+<link rel="stylesheet" href="/assets/app.css?v=character-sheet-5" />
 </head>
 <body>
 <canvas id="shaderCanvas" class="ambient-canvas shader-canvas" aria-hidden="true"></canvas>
@@ -95,10 +95,14 @@
 
     <section id="view-character" class="view content-view">
       <div class="view-heading"><div><div class="eyebrow">Owned by you</div><h1>Character</h1><p>Your character can be edited by you; the game can propose mechanical changes.</p></div></div>
-      <div class="character-layout">
+       <div class="character-layout">
         <article class="character-card panel-card">
-          <div class="portrait-slot" id="portraitSlot"><span>Portrait</span><button id="setPortrait" class="button compact">Choose image</button></div>
-          <div class="form-grid two" id="characterForm"></div>
+          <div class="character-sheet-header">
+            <div class="portrait-slot" id="portraitSlot"><span>Portrait</span><button id="setPortrait" class="button compact">Choose image</button></div>
+            <div class="character-intro"><div class="eyebrow">Your adventurer</div><h2 id="characterSheetName">Mara Voss</h2><p id="characterSheetSummary">Rogue · Level 1</p><div class="character-tags"><span class="chip">Player character</span><span class="chip">Lantern Room</span></div></div>
+          </div>
+          <div class="character-stats" id="characterStats"></div>
+          <div class="character-fields" id="characterForm"></div>
         </article>
         <article class="panel-card"><h3>Party</h3><div id="partyList" class="party-list"></div></article>
       </div>
@@ -160,6 +164,6 @@
 <div id="themeSheet" class="bottom-sheet hidden"><div class="sheet-backdrop" data-close-sheet></div><div class="sheet-card glass"><div class="sheet-handle"></div><h3>Atmosphere</h3><div id="quickThemeGrid" class="quick-theme-grid"></div></div></div>
 <div id="tableSheet" class="bottom-sheet hidden"><div class="sheet-backdrop" data-close-sheet></div><div class="sheet-card glass"><div class="sheet-handle"></div><h3>Table connection</h3><div id="tableSheetBody"></div></div></div>
 <input id="portraitUpload" type="file" accept="image/*" hidden />
-<script type="module" src="/assets/app.js"></script>
+ <script type="module" src="/assets/app.js?v=character-sheet-5"></script>
 </body>
 </html>
