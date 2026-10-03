@@ -1,0 +1,62 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
+  <defs>
+    <radialGradient id="bgGlow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#1e1b4b"/>
+      <stop offset="100%" stop-color="#0f172a"/>
+    </radialGradient>
+    
+    <radialGradient id="lanternGlow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#fef08a" stop-opacity="1"/>
+      <stop offset="40%" stop-color="#f59e0b" stop-opacity="0.8"/>
+      <stop offset="80%" stop-color="#d97706" stop-opacity="0.2"/>
+      <stop offset="100%" stop-color="#d97706" stop-opacity="0"/>
+    </radialGradient>
+
+    <linearGradient id="goldFrame" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#fbbf24"/>
+      <stop offset="50%" stop-color="#b45309"/>
+      <stop offset="100%" stop-color="#78350f"/>
+    </linearGradient>
+
+    <linearGradient id="dieFace" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#312e81"/>
+      <stop offset="100%" stop-color="#1e1b4b"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Background Circle -->
+  <circle cx="256" cy="256" r="240" fill="url(#bgGlow)" stroke="url(#goldFrame)" stroke-width="8"/>
+
+  <!-- Ambient Light Glow -->
+  <circle cx="256" cy="256" r="180" fill="url(#lanternGlow)"/>
+
+  <!-- D20 Outline / Lantern Core -->
+  <g transform="translate(256,256) scale(1.1) translate(-256,-256)" stroke="#f59e0b" stroke-width="3" stroke-linejoin="round">
+    <!-- Outer Hexagon -->
+    <polygon points="256,120 360,180 360,300 256,360 152,300 152,180" fill="url(#dieFace)"/>
+    <!-- Inner Triangles / Edges -->
+    <polygon points="256,120 210,210 302,210" fill="#3730a3" opacity="0.6"/>
+    <polygon points="152,180 210,210 256,120" fill="#312e81" opacity="0.8"/>
+    <polygon points="360,180 302,210 256,120" fill="#4338ca" opacity="0.9"/>
+    
+    <polygon points="210,210 302,210 256,310" fill="#4f46e5" opacity="0.5"/>
+    <polygon points="152,180 210,210 170,270" fill="#3730a3" opacity="0.7"/>
+    <polygon points="360,180 302,210 340,270" fill="#4338ca" opacity="0.8"/>
+    
+    <polygon points="152,300 170,270 210,210" fill="#312e81" opacity="0.9"/>
+    <polygon points="360,300 340,270 302,210" fill="#3730a3" opacity="0.7"/>
+    
+    <polygon points="152,300 256,360 256,310" fill="#1e1b4b" opacity="0.9"/>
+    <polygon points="360,300 256,360 256,310" fill="#312e81" opacity="0.9"/>
+    <polygon points="170,270 210,210 256,310" fill="#4338ca" opacity="0.6"/>
+    <polygon points="340,270 302,210 256,310" fill="#4f46e5" opacity="0.7"/>
+  </g>
+
+  <!-- Lantern Hardware -->
+  <!-- Top Cap -->
+  <path d="M 210 130 Q 256 100 302 130 L 280 100 Q 256 90 232 100 Z" fill="url(#goldFrame)"/>
+  <!-- Top Ring -->
+  <circle cx="256" cy="80" r="20" fill="none" stroke="url(#goldFrame)" stroke-width="8"/>
+  <!-- Bottom Base -->
+  <path d="M 200 370 Q 256 390 312 370 L 290 400 Q 256 410 222 400 Z" fill="url(#goldFrame)"/>
+</svg>
