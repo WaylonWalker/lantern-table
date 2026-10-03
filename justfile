@@ -3,7 +3,9 @@ set dotenv-load := true
 
 registry := env_var_or_default("REGISTRY", "registry.wayl.one")
 image_name := env_var_or_default("IMAGE_NAME", "lantern-table")
-tag := env_var_or_default("TAG", `git rev-parse --short HEAD 2>/dev/null || date +%Y%m%d%H%M%S`)
+commit := `git rev-parse --short HEAD 2>/dev/null || echo local`
+timestamp := `date +%Y%m%d%H%M%S`
+tag := env_var_or_default("TAG", commit + "-" + timestamp)
 image := registry + "/" + image_name + ":" + tag
 engine := env_var_or_default("CONTAINER_ENGINE", "podman")
 namespace := env_var_or_default("NAMESPACE", "lantern-table")
@@ -33,10 +35,11 @@ publish: build push
 apply:
     kubectl apply -k k8s
 
-# Direct iteration path: publish, apply, and put this tag on the Deployment.
-deploy: publish apply
+# Full direct deploy: validate, publish a unique tag, apply, roll out, and smoke-test.
+deploy: validate publish apply
     kubectl -n {{namespace}} set image deployment/{{app}} app={{image}}
     kubectl -n {{namespace}} rollout status deployment/{{app}} --timeout=240s
+    just doctor
 
 # Useful only when intentionally testing :latest.
 deploy-latest:

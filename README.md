@@ -189,7 +189,7 @@ Build + push an immutable tag:
 just publish
 ```
 
-Direct test deployment:
+The full direct flow runs validation, builds and pushes a unique image tag, applies the manifests, waits for rollout, and runs the production doctor:
 
 ```bash
 just deploy
@@ -209,7 +209,7 @@ The default container engine is Podman. Override with:
 CONTAINER_ENGINE=docker just publish
 ```
 
-The tag defaults to the Git SHA when this directory is in a Git repository, otherwise a timestamp. Set `TAG=0.2.0` (or similar) to choose it explicitly.
+The default tag combines the current short Git SHA (or `local` outside a Git checkout) with a timestamp, so repeated deploys create a fresh image. Set `TAG=0.2.0` (or similar) to choose it explicitly.
 
 ### Argo CD
 

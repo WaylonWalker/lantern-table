@@ -16,7 +16,7 @@ WORKDIR /app
 # Python dependencies when it starts.
 RUN uv pip install --system \
     'fastapi>=0.118' \
-    'uvicorn>=0.37' \
+    'uvicorn[standard]>=0.37' \
     'httpx>=0.28' \
     'PyJWT[crypto]>=2.10' \
     'redis>=6.0' \

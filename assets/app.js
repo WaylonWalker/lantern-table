@@ -191,7 +191,7 @@ function renderTranscript(){
 }
 function renderNextMoves(){const html=state.nextMoves.length?state.nextMoves.map((m,i)=>`<button class="move-button" data-move="${i}"><b>${esc(m.label)}</b><span>${esc(m.description)}</span></button>`).join(''):'<div class="muted">The DM will suggest options after each turn.</div>';$('nextMoves').innerHTML=html;$$('[data-move]').forEach(b=>b.onclick=()=>chooseMove(+b.dataset.move))}
 function renderQuests(){$('questList').innerHTML=state.quests.length?state.quests.slice(-6).map(q=>`<div class="quest-item"><div>✦</div><div><b>${esc(q.title)}</b><small>${esc(q.note||'')}</small></div></div>`).join(''):'<div class="muted">No active quests yet.</div>'}
-function renderPresence(){const own=`<div class="presence-item"><div class="avatar">${esc((state.localPlayer.name||'P')[0])}</div><div class="meta"><b>${esc(state.localPlayer.name)}</b><small>${rtc.role==='host'?'Host':rtc.role==='player'?'Player':'Local player'}</small></div><span class="status-dot"></span></div>`;const peers=Object.values(rtc.peers).map(p=>`<div class="presence-item"><div class="avatar">${esc((p.name||'P')[0])}</div><div class="meta"><b>${esc(p.name||'Player')}</b><small>${esc(p.character||p.role||'Player')}</small></div><span class="status-dot"></span></div>`).join('');$('presenceList').innerHTML=own+peers}
+function renderPresence(){const character=currentCharacter(),name=character?.name||'Player',portrait=getAssetUrl(character?.portraitAssetId);const avatar=portrait?`<img src="${esc(portrait)}" alt="${esc(`${name} portrait`)}"/>`:esc(name[0]||'P');const own=`<div class="presence-item"><div class="avatar">${avatar}</div><div class="meta"><b>${esc(name)}</b><small>${rtc.role==='host'?'Host':rtc.role==='player'?'Player':'Local player'}</small></div><span class="status-dot"></span></div>`;const peers=Object.values(rtc.peers).map(p=>`<div class="presence-item"><div class="avatar">${esc((p.name||'P')[0])}</div><div class="meta"><b>${esc(p.name||'Player')}</b><small>${esc(p.character||p.role||'Player')}</small></div><span class="status-dot"></span></div>`).join('');$('presenceList').innerHTML=own+peers}
 function renderCharacter(){const c=currentCharacter();const hp=Math.max(0,Number(c.hp)||0),maxHp=Math.max(1,Number(c.maxHp)||1),hpPercent=Math.min(100,Math.round(hp/maxHp*100));$('characterSheetName').textContent=c.name||'Unnamed adventurer';$('characterSheetSummary').textContent=`${c.class||'Adventurer'} · Level ${c.level||1}`;$('characterStats').innerHTML=`<div class="character-stat health-stat"><span>Hit points</span><strong>${hp}<small> / ${maxHp}</small></strong><div class="health-track"><i style="width:${hpPercent}%"></i></div><em>${hpPercent}% remaining</em></div><div class="character-stat"><span>Armor class</span><strong>${esc(c.ac??'—')}</strong><em>Defense</em></div><div class="character-stat"><span>Current scene</span><strong>${esc(c.location||'Unknown')}</strong><em>Where you are</em></div>`;$('characterForm').innerHTML=`<div class="field-section"><div class="field-section-title"><span>Identity</span><small>How the table knows you</small></div><div class="form-grid two">${[['Name','name','text'],['Class / role','class','text'],['Level','level','number']].map(([label,key,type])=>`<label>${label}<input data-char="${key}" type="${type}" value="${esc(c[key]??'')}" /></label>`).join('')}</div></div><div class="field-section"><div class="field-section-title"><span>Vitals & place</span><small>Your current mechanical state</small></div><div class="form-grid two">${[['Armor class','ac','number'],['HP','hp','number'],['Max HP','maxHp','number'],['Location','location','text']].map(([label,key,type])=>`<label>${label}<input data-char="${key}" type="${type}" value="${esc(c[key]??'')}" /></label>`).join('')}</div></div><div class="field-section notes-section"><div class="field-section-title"><span>Character notes</span><small>Details worth remembering</small></div><label><textarea data-char="notes" rows="4" placeholder="Personality, goals, secrets, and reminders...">${esc(c.notes??'')}</textarea></label></div>`;$$('[data-char]').forEach(x=>x.onchange=()=>editCharacter(x.dataset.char,x.value));const portrait=getAssetUrl(c.portraitAssetId);$('portraitSlot').classList.toggle('has-image',!!portrait);$('portraitSlot').style.backgroundImage=portrait?`url("${portrait}")`:'';$('partyList').innerHTML=state.characters.map(ch=>`<div class="party-member"><div class="avatar">${esc(ch.name[0]||'?')}</div><div class="meta"><b>${esc(ch.name)}</b><small>${esc(ch.class)} · Lv ${ch.level} · ${esc(ch.location||state.scene.location)}</small></div><span>${ch.hp}/${ch.maxHp} HP</span></div>`).join('')}
 function renderCampaign(){const s=state.campaign.settings;const opts=(key,values)=>`<label>${key}<select data-setting="${key}">${values.map(v=>`<option ${s[key]===v?'selected':''}>${v}</option>`).join('')}</select></label>`;$('campaignSettingsForm').innerHTML=opts('difficulty',['Relaxed','Normal','Dangerous','Brutal'])+opts('rules',['Story first','Balanced','Rules strict'])+opts('dmStyle',['Helpful','Neutral','Mischievous','Ruthless'])+opts('description',['Concise','Balanced','Cinematic'])+opts('combat',['Low','Medium','High'])+opts('puzzles',['Low','Medium','High'])+opts('horror',['Low','Medium','High'])+opts('death',['Rare','Possible','Deadly'])+opts('guidance',['Lots','Balanced','Minimal'])+opts('advancement',['Milestone','XP'])+opts('characterCreation',['Quick','Guided','Full']);$$('[data-setting]').forEach(x=>x.onchange=()=>{if(!canHostEdit())return toast('Host controls campaign settings');s[x.dataset.setting]=x.value;addEvent('settings',`${x.dataset.setting} changed to ${x.value}`,{actor:'Host'});save();render()});const p=state.campaign.permissions;$('permissionsForm').innerHTML=Object.entries({playersEditOwnCharacter:'Players edit their own character',playersChangePortrait:'Players choose their portrait',playersDrawShared:'Players can draw/share maps',playersSuggestSettings:'Players can suggest campaign changes',playersChangeCampaign:'Players directly change campaign settings',partyControlAbsent:'Party may control absent characters',dmControlAbsent:'DM may control absent characters'}).map(([k,label])=>`<label class="toggle-row"><span><b>${label}</b></span><input data-perm="${k}" type="checkbox" ${p[k]?'checked':''} ${canHostEdit()?'':'disabled'}></label>`).join('');$$('[data-perm]').forEach(x=>x.onchange=()=>{p[x.dataset.perm]=x.checked;save();render()});$('journal').value=state.journal}
 function canHostEdit(){return rtc.role!=='player'}
@@ -298,14 +298,14 @@ function chooseMove(i){const m=state.nextMoves[i];if(m)act(m.action)}
 // WebRTC host-star multiplayer ---------------------------------------------------
 const rtc={
   role:'solo',ws:null,room:'',peers:{},pc:null,dc:null,
-  iceServers:[{urls:['stun:stun.cloudflare.com:3478']}],connected:false,retry:null,retryAttempt:0,serviceDown:false,hostUnavailable:false,localCharacterDraft:null,
+  iceServers:[{urls:['stun:stun.cloudflare.com:3478']}],connected:false,retry:null,retryAttempt:0,serviceDown:false,hostUnavailable:false,joinError:'',pendingIce:{},localCharacterDraft:null,
   async loadIce(){try{const d=await getJSON('/api/ice');this.iceServers=d.iceServers||this.iceServers}catch{}},
   async startHost(room){
     this.leave(false);await this.loadIce();this.role='host';this.room=room;this.hostUnavailable=false;
     state.multiplayer.role='host';state.multiplayer.lastRoom=room;save({broadcast:false});this.connectSignal();render();toast(`Hosting ${room}`)
   },
   async join(room){
-    this.localCharacterDraft=clone(currentCharacter());this.leave(false);await this.loadIce();this.role='player';this.room=room.toUpperCase();this.hostUnavailable=false;
+    this.localCharacterDraft=clone(currentCharacter());this.leave(false);await this.loadIce();this.role='player';this.room=room.toUpperCase();this.hostUnavailable=false;this.joinError='';
     state.multiplayer.role='player';state.multiplayer.lastRoom=this.room;save({broadcast:false});this.connectSignal();render()
   },
   async connectSignal(){
@@ -339,8 +339,8 @@ const rtc={
     const p=msg.payload||{};
     if(p.kind==='hello'&&this.role==='host')await this.makeOffer(msg.sender,p);
     else if(p.kind==='offer'&&this.role==='player')await this.acceptOffer(msg.sender,p);
-    else if(p.kind==='answer'&&this.role==='host'){const peer=this.peers[msg.sender];if(peer)await peer.pc.setRemoteDescription(p.sdp)}
-    else if(p.kind==='ice'){const target=this.role==='host'?this.peers[msg.sender]?.pc:this.pc;try{if(target&&p.candidate)await target.addIceCandidate(p.candidate)}catch{}}
+    else if(p.kind==='answer'&&this.role==='host'){const peer=this.peers[msg.sender];if(peer){await peer.pc.setRemoteDescription(p.sdp);await this.flushIce(msg.sender,peer.pc)}}
+    else if(p.kind==='ice'&&p.candidate)await this.receiveIce(msg.sender,p.candidate)
   },
   async makeOffer(peerId,hello={}){
     if(this.peers[peerId])return;
@@ -350,11 +350,21 @@ const rtc={
   },
   async acceptOffer(hostId,p){
     const pc=new RTCPeerConnection({iceServers:this.iceServers});this.pc=pc;this.setupPC(pc,hostId);pc.ondatachannel=e=>{this.dc=e.channel;this.setupDC(this.dc,hostId)};
-    await pc.setRemoteDescription(p.sdp);const ans=await pc.createAnswer();await pc.setLocalDescription(ans);this.signal(hostId,'answer',{sdp:pc.localDescription})
+    await pc.setRemoteDescription(p.sdp);await this.flushIce(hostId,pc);const ans=await pc.createAnswer();await pc.setLocalDescription(ans);this.signal(hostId,'answer',{sdp:pc.localDescription})
+  },
+  async receiveIce(peerId,candidate){
+    const pc=this.role==='host'?this.peers[peerId]?.pc:this.pc;
+    if(!pc||!pc.remoteDescription){(this.pendingIce[peerId] ||= []).push(candidate);return}
+    try{await pc.addIceCandidate(candidate)}catch(err){console.warn('Could not add WebRTC candidate',err)}
+  },
+  async flushIce(peerId,pc){
+    const candidates=this.pendingIce[peerId]||[];delete this.pendingIce[peerId];
+    for(const candidate of candidates){try{await pc.addIceCandidate(candidate)}catch(err){console.warn('Could not add queued WebRTC candidate',err)}}
   },
   setupPC(pc,peerId){
     pc.onicecandidate=e=>{if(e.candidate)this.signal(peerId,'ice',{candidate:e.candidate})};
-    pc.onconnectionstatechange=()=>{if(['failed','closed','disconnected'].includes(pc.connectionState)){if(this.role==='player'){this.connected=false;state.multiplayer.hostOnline=false;render()}else this.closePeer(peerId)}}
+    if(this.role==='player')setTimeout(()=>{if(this.pc===pc&&this.dc?.readyState!=='open'&&!this.joinError){this.joinError='The host was found, but the devices could not establish a direct connection. The network may require TURN relay support.';renderJoinOverlay()}},20000);
+    pc.onconnectionstatechange=()=>{if(['failed','closed','disconnected'].includes(pc.connectionState)){if(this.role==='player'){this.connected=false;state.multiplayer.hostOnline=false;if(pc.connectionState==='failed'){this.joinError='The host was found, but the devices could not establish a direct connection. The network may require TURN relay support.';renderJoinOverlay()}render()}else this.closePeer(peerId)}}
   },
   setupDC(dc,peerId){
     dc.onopen=()=>{
@@ -397,11 +407,11 @@ const rtc={
   broadcast(m){if(this.role!=='host')return;for(const p of Object.values(this.peers))if(p.dc?.readyState==='open')p.dc.send(JSON.stringify(m))},
   sendHost(m){if(this.role==='player'&&this.dc?.readyState==='open'){this.dc.send(JSON.stringify(m));return true}return false},
   closePeer(id){const p=this.peers[id];if(p){try{p.pc.close()}catch{}delete this.peers[id]}renderPresence()},
-  leave(update=true){clearTimeout(this.retry);try{this.ws?.close(1000)}catch{}try{this.pc?.close()}catch{}for(const p of Object.values(this.peers))try{p.pc.close()}catch{}this.ws=null;this.pc=null;this.dc=null;this.peers={};this.role='solo';this.connected=false;this.hostUnavailable=false;if(update){state.multiplayer.role='solo';save({broadcast:false});render()}}
+  leave(update=true){clearTimeout(this.retry);try{this.ws?.close(1000)}catch{}try{this.pc?.close()}catch{}for(const p of Object.values(this.peers))try{p.pc.close()}catch{}this.ws=null;this.pc=null;this.dc=null;this.peers={};this.pendingIce={};this.role='solo';this.connected=false;this.hostUnavailable=false;this.joinError='';if(update){state.multiplayer.role='solo';save({broadcast:false});render()}}
 };
 function openJoinPrompt(){const code=prompt('Join code',state.multiplayer.lastRoom||'');if(code){joinIntent=code.trim().toUpperCase();rtc.join(joinIntent)}}
-function renderJoinOverlay(){const el=$('joinOverlay');if(!joinIntent||rtc.role!=='player'||rtc.dc?.readyState==='open'){el.classList.add('hidden');return}el.classList.remove('hidden');$('joinOverlayCode').textContent=joinIntent;const retry=$('joinRetry');if(rtc.serviceDown){$('joinOverlayTitle').textContent='Table service is restarting';$('joinOverlayText').textContent='Your invite is valid. Signaling is temporarily unavailable; Lantern Table will retry automatically.';retry.classList.remove('hidden')}else if(rtc.hostUnavailable){$('joinOverlayTitle').textContent='Host is offline';$('joinOverlayText').textContent='This campaign cannot progress until its host opens the table again.';retry.classList.remove('hidden')}else{$('joinOverlayTitle').textContent='Finding the host…';$('joinOverlayText').textContent='Connecting directly to the existing campaign. You will not create a new table.';retry.classList.add('hidden')}}
-$('joinRetry').onclick=()=>{rtc.hostUnavailable=false;rtc.serviceDown=false;appConfig.signaling_healthy=true;rtc.connectSignal();renderJoinOverlay()};
+function renderJoinOverlay(){const el=$('joinOverlay');if(!joinIntent||rtc.role!=='player'||rtc.dc?.readyState==='open'){el.classList.add('hidden');return}el.classList.remove('hidden');$('joinOverlayCode').textContent=joinIntent;const retry=$('joinRetry');if(rtc.joinError){$('joinOverlayTitle').textContent='Direct connection failed';$('joinOverlayText').textContent=rtc.joinError;retry.classList.remove('hidden')}else if(rtc.serviceDown){$('joinOverlayTitle').textContent='Table service is restarting';$('joinOverlayText').textContent='Your invite is valid. Signaling is temporarily unavailable; Lantern Table will retry automatically.';retry.classList.remove('hidden')}else if(rtc.hostUnavailable){$('joinOverlayTitle').textContent='Host is offline';$('joinOverlayText').textContent='This campaign cannot progress until its host opens the table again.';retry.classList.remove('hidden')}else{$('joinOverlayTitle').textContent='Finding the host…';$('joinOverlayText').textContent='Connecting directly to the existing campaign. You will not create a new table.';retry.classList.add('hidden')}}
+$('joinRetry').onclick=()=>{if(rtc.joinError){location.reload();return}rtc.hostUnavailable=false;rtc.serviceDown=false;appConfig.signaling_healthy=true;rtc.connectSignal();renderJoinOverlay()};
 
 // Campaign wizard ----------------------------------------------------------------
 let selectedPreset='heroic';
