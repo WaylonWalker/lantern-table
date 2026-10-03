@@ -19,7 +19,8 @@ RUN uv pip install --system \
     'uvicorn>=0.37' \
     'httpx>=0.28' \
     'PyJWT[crypto]>=2.10' \
-    'redis>=6.0'
+    'redis>=6.0' \
+    'qrcode>=8.0'
 
 COPY --chown=lantern:lantern dnd_chatgpt_server.py dnd_localfirst_demo.html ./
 COPY --chown=lantern:lantern assets ./assets

@@ -1,17 +1,30 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" class="booting">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
 <meta name="theme-color" content="#0d1017" />
 <title>Lantern Table — local-first D&D</title>
+<link rel="icon" href="/favicon.ico" />
 <link rel="stylesheet" href="/assets/app.css?v=character-sheet-5" />
+<script>setTimeout(()=>document.documentElement.classList.remove('booting'),1800)</script>
 </head>
 <body>
 <canvas id="shaderCanvas" class="ambient-canvas shader-canvas" aria-hidden="true"></canvas>
 <canvas id="fxCanvas" class="ambient-canvas fx-canvas" aria-hidden="true"></canvas>
 <div id="lanternGlow" class="lantern-glow" aria-hidden="true"></div>
 <div id="stormFlash" class="storm-flash" aria-hidden="true"></div>
+
+<div id="joinOverlay" class="join-overlay hidden" role="status" aria-live="polite">
+  <div class="join-card glass">
+    <div class="brand-mark"><img src="/assets/icons/game/dungeon-gate.svg" alt="" /></div>
+    <div class="eyebrow">Joining table</div>
+    <h1 id="joinOverlayTitle">Finding the host…</h1>
+    <p id="joinOverlayText">Connecting to the table without creating a new campaign.</p>
+    <div id="joinOverlayCode" class="room-code"></div>
+    <button id="joinRetry" class="button hidden">Retry</button>
+  </div>
+</div>
 
 <div id="wizard" class="wizard-shell hidden" role="dialog" aria-modal="true" aria-labelledby="wizardTitle">
   <div class="wizard-card spring-surface">
@@ -136,7 +149,7 @@
     <section id="view-settings" class="view content-view">
       <div class="view-heading"><div><div class="eyebrow">Local preferences</div><h1>Settings</h1><p>Visual and audio preferences live on this device. The DM can suggest atmosphere, but you stay in control.</p></div></div>
       <div class="card-grid two">
-        <article class="panel-card"><h3>Appearance</h3><label>Color mode<select id="colorMode"><option value="follow">Follow DM theme</option><option value="dark">Prefer dark</option><option value="light">Prefer light</option></select></label><label>Theme<select id="themeSelect"></select></label><div class="toggle-row"><span><b>Let DM change atmosphere</b><small>Theme/effects can follow the story.</small></span><input id="dmThemeToggle" type="checkbox" checked /></div><div class="toggle-row"><span><b>Environmental effects</b><small>Snow, rain, dust, light, water and more.</small></span><input id="effectsToggle" type="checkbox" checked /></div><div class="toggle-row"><span><b>Motion</b><small>Physics-style springs and transitions.</small></span><input id="motionToggle" type="checkbox" checked /></div><label>Effect intensity<input id="effectIntensity" type="range" min="0" max="100" value="35" /></label><div id="effectPicker" class="effect-picker"></div></article>
+        <article class="panel-card"><h3>Appearance</h3><label>Color mode<select id="colorMode"><option value="follow">Follow DM theme</option><option value="dark">Prefer dark</option><option value="light">Prefer light</option></select></label><label>Theme<select id="themeSelect"></select></label><div class="toggle-row"><span><b>Let DM change atmosphere</b><small>Theme/effects can follow the story.</small></span><input id="dmThemeToggle" type="checkbox" checked /></div><div class="toggle-row"><span><b>Environmental effects</b><small>Snow, rain, dust, light, water and more.</small></span><input id="effectsToggle" type="checkbox" checked /></div><div class="toggle-row"><span><b>Motion</b><small>Physics-style springs and transitions.</small></span><input id="motionToggle" type="checkbox" checked /></div><label>Effect intensity<input id="effectIntensity" type="range" min="0" max="100" value="35" /></label><div class="button-row"><button id="effectsFollowDm" class="button compact">Use DM effects</button></div><div id="effectPicker" class="effect-picker"></div><p class="small-note">Tapping an effect enters local preview override. “Use DM effects” returns to the scene effects chosen by the DM.</p></article>
         <article class="panel-card"><h3>Narration</h3><label>Voice mode<select id="voiceMode"><option value="off">Off</option><option value="system">System voice · free</option><option value="kokoro">Kokoro local cinematic · free after download</option></select></label><label>Voice<select id="voiceSelect"></select></label><label>Style<select id="voiceStyle"><option value="normal">Normal</option><option value="creepy">Creepy</option><option value="ancient">Ancient</option><option value="urgent">Urgent</option></select></label><div class="toggle-row"><span><b>Auto-narrate DM</b><small>Speak complete sentences as they arrive.</small></span><input id="autoNarrate" type="checkbox" /></div><button id="testVoice" class="button">Test voice</button><div id="kokoroStatus" class="small-note">Kokoro downloads an open local TTS model on first use. WebGPU is preferred; WASM is the fallback.</div></article>
         <article class="panel-card"><h3>AI Dungeon Master</h3><div id="aiPanel"></div></article>
         <article class="panel-card"><h3>Local data</h3><p class="muted">Campaign state is stored in this browser. The public signaling service does not persist it.</p><div class="button-row"><button id="exportSave" class="button"><img src="/assets/icons/tabler/download.svg" alt=""/> Export campaign</button><label class="button"><img src="/assets/icons/tabler/upload.svg" alt=""/> Import campaign<input id="importSave" type="file" accept="application/json,.json,.lantern" hidden /></label><button id="resetSave" class="button danger">Reset</button></div><hr/><h4>Returning player pass</h4><p class="muted">A Player Pass carries your stable local player ID and character draft to another device. Treat it like a private table credential.</p><div class="button-row"><button id="exportPlayerPass" class="button">Export Player Pass</button><label class="button">Import Player Pass<input id="importPlayerPass" type="file" accept="application/json,.json,.lantern-player" hidden /></label></div></article>
@@ -163,6 +176,7 @@
 <div id="toastStack" class="toast-stack" aria-live="polite"></div>
 <div id="themeSheet" class="bottom-sheet hidden"><div class="sheet-backdrop" data-close-sheet></div><div class="sheet-card glass"><div class="sheet-handle"></div><h3>Atmosphere</h3><div id="quickThemeGrid" class="quick-theme-grid"></div></div></div>
 <div id="tableSheet" class="bottom-sheet hidden"><div class="sheet-backdrop" data-close-sheet></div><div class="sheet-card glass"><div class="sheet-handle"></div><h3>Table connection</h3><div id="tableSheetBody"></div></div></div>
+<div id="aiSetupSheet" class="bottom-sheet hidden"><div class="sheet-backdrop" data-close-sheet></div><div class="sheet-card glass"><div class="sheet-handle"></div><h3>Connect the AI Dungeon Master</h3><div id="aiSetupBody"></div></div></div>
 <input id="portraitUpload" type="file" accept="image/*" hidden />
  <script type="module" src="/assets/app.js?v=character-sheet-5"></script>
 </body>

@@ -29,3 +29,10 @@ Lantern Table does not redistribute the Kokoro model in this ZIP/container. If a
 - License: MIT
 
 Radiant demonstrates the same useful production pattern for ambient web effects (Canvas/WebGL, DPR-aware rendering, visibility pause, touch/mouse support). Lantern Table's shipped shader/effect code is original; Radiant source is not bundled as a runtime dependency.
+
+## python-qrcode
+
+- Source: https://github.com/lincolnloop/python-qrcode
+- License: BSD
+
+Used by the disposable public service to render join URLs as SVG QR codes in memory. No QR payloads are persisted.

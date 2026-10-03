@@ -109,6 +109,34 @@ The same append-oriented timeline supports reconnect/catch-up and gives the camp
 
 The built-in pointer canvas supports pen, erase, color, size, undo, clear, and saving drawings into the local campaign asset store. Uploaded images and saved drawings are stored in IndexedDB. The DM can suggest an image prompt without sending an image-generation request.
 
+
+## Launch hotfix behavior
+
+This package includes the first-production-launch fixes:
+
+- `#join=ROOM-CODE` is parsed before the campaign wizard renders, so invite links go straight into join/reconnect mode.
+- The Table sheet shows a locally generated QR code, copyable URL, room code, and native Share button when available. QR generation is in-memory; invite URLs are not stored server-side.
+- The host automatically advertises the room when campaign creation finishes.
+- The DM starts the opening scene automatically as soon as the host companion is running and ChatGPT authorization is complete.
+- Joining players never attempt localhost companion requests.
+- Signaling failures use health-aware retry/backoff instead of a tight WebSocket reconnect loop.
+- Valkey starts with persistence disabled using the image's normal entrypoint; the previous duplicated `valkey-server` argument has been removed.
+- Kokoro **Test voice** replaces/cancels the previous preview instead of queueing previews.
+- Dice/system messages render through the Markdown renderer.
+- The saved theme is applied while the page is still hidden, preventing the default-theme flash on refresh.
+- HP, max HP, AC, level, conditions, and location are game/DM-authoritative. New characters have unset mechanics until the DM establishes them. Players still own identity, backstory, appearance, and notes.
+- Effects have stronger baseline visibility, deterministic local preview overrides, and an explicit **Use DM effects** reset.
+
+### Invite/rejoin flow
+
+The host opens **Table** and can copy or scan an invite like:
+
+```text
+https://dnd.waylonwalker.com/#join=ABCD-123
+```
+
+A joining browser bypasses campaign creation, connects to signaling, receives the host snapshot, then removes the temporary join fragment from the address bar.
+
 ## Public service vs local ChatGPT companion
 
 OpenAI's current open-source Sign in with ChatGPT plan-sharing flow uses a loopback callback on the user's own device. Because of that, the Kubernetes pod is deliberately **not** the holder of user ChatGPT credentials.
@@ -125,9 +153,9 @@ or:
 ./dnd_chatgpt_server.py
 ```
 
-The hosted page probes `http://127.0.0.1:8765` for the companion. The companion handles OAuth/token refresh and streams the Dungeon Master response; the public service handles multiplayer signaling only.
+The hosted page does **not** probe localhost automatically. After a host creates a campaign, Lantern Table shows an explicit AI-DM setup sheet. The host downloads/runs the companion, chooses **Continue with ChatGPT**, then checks the connection. Once authorized, the DM autonomously opens the first playable scene.
 
-Only the AI provider/host needs ChatGPT authorization. Other players can join the table without a ChatGPT login.
+Joining players never probe `127.0.0.1`, never install the companion, and never need a ChatGPT login. The companion handles OAuth/token refresh and streams the Dungeon Master response; the public service handles multiplayer signaling only.
 
 ## Local data
 
@@ -223,3 +251,13 @@ This checks Python compilation, browser JavaScript syntax (when Node is installe
 ## Third-party components
 
 See `CREDITS.md`. The icon SVGs are vendored. Kokoro/kokoro-js is an optional runtime download only; its model is not included in this ZIP or container.
+
+
+### Hosted + localhost OAuth return
+
+The ChatGPT OAuth callback itself remains on `http://127.0.0.1:8765/auth/callback`, because the open-source plan-sharing flow requires loopback on the host device. The companion now remembers the UI that launched sign-in and immediately returns there after credentials are saved:
+
+- launched from `https://dnd.waylonwalker.com` → returns to the hosted table
+- launched from `http://127.0.0.1:8765` → returns to the local table
+
+The `return_to` URL is allow-listed to Lantern Table origins so the companion cannot be used as an arbitrary redirector.

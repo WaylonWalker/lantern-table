@@ -20,7 +20,7 @@ spec:
       containers:
         - name: valkey
           image: valkey/valkey:8.1-alpine
-          args: ["valkey-server", "--save", "", "--appendonly", "no", "--protected-mode", "no"]
+          args: ["--save", "", "--appendonly", "no", "--protected-mode", "no"]
           ports:
             - name: redis
               containerPort: 6379

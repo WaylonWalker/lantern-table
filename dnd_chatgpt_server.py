@@ -7,6 +7,7 @@
 #   "httpx>=0.28",
 #   "PyJWT[crypto]>=2.10",
 #   "redis>=6.0",
+#   "qrcode>=8.0",
 # ]
 # ///
 """Lantern Table — local-first D&D with Sign in with ChatGPT.
@@ -32,12 +33,15 @@ import time
 import uuid
 from pathlib import Path
 from typing import Any, AsyncIterator
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 import httpx
 import jwt
 import uvicorn
+import qrcode
+import qrcode.image.svg
 from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse, RedirectResponse, StreamingResponse, JSONResponse
+from fastapi.responses import FileResponse, RedirectResponse, StreamingResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -98,6 +102,48 @@ redis_client = redis.from_url(REDIS_URL, decode_responses=True) if (redis and RE
 local_room_peers: dict[str, dict[str, WebSocket]] = {}
 turn_cache: dict[str, Any] = {"expires": 0, "iceServers": None}
 
+
+def allowed_return_origins() -> set[str]:
+    values = {
+        "http://127.0.0.1:8765",
+        "http://localhost:8765",
+        os.environ.get("LANTERN_PUBLIC_ORIGIN", "https://dnd.waylonwalker.com").rstrip("/"),
+    }
+    for raw in (os.environ.get("LANTERN_CORS_ORIGINS", ""), os.environ.get("LANTERN_RETURN_ORIGINS", "")):
+        values.update(v.strip().rstrip("/") for v in raw.split(",") if v.strip())
+    return values
+
+
+def validated_return_to(raw: str | None) -> str:
+    """Return a safe UI URL for post-OAuth navigation. Never allow arbitrary open redirects."""
+    if not raw:
+        return f"http://{HOST}:{PORT}/"
+    try:
+        parts = urlsplit(raw)
+    except ValueError:
+        return f"http://{HOST}:{PORT}/"
+    if parts.scheme not in {"http", "https"} or not parts.netloc or parts.username or parts.password:
+        return f"http://{HOST}:{PORT}/"
+    origin = f"{parts.scheme}://{parts.netloc}".rstrip("/")
+    if origin not in allowed_return_origins():
+        return f"http://{HOST}:{PORT}/"
+    return urlunsplit((parts.scheme, parts.netloc, parts.path or "/", parts.query, parts.fragment))
+
+
+def auth_return_url(return_to: str) -> str:
+    parts = urlsplit(return_to)
+    query = dict(parse_qsl(parts.query, keep_blank_values=True))
+    query["lantern_auth"] = "connected"
+    return urlunsplit((parts.scheme, parts.netloc, parts.path or "/", urlencode(query), parts.fragment))
+
+
+async def redis_available() -> bool:
+    if not redis_client:
+        return False
+    try:
+        return bool(await redis_client.ping())
+    except Exception:
+        return False
 
 def b64url(data: bytes) -> str:
     return base64.urlsafe_b64encode(data).decode().rstrip("=")
@@ -239,6 +285,11 @@ DM_TOOLS: list[dict[str, Any]] = [
         "parameters": {"type": "object", "properties": {"label": {"type": "string"}, "ability": {"type": "string", "enum": ["STR","DEX","CON","INT","WIS","CHA","NONE"]}, "dc": {"type": "integer", "minimum": 1, "maximum": 35}, "reason": {"type": "string"}}, "required": ["label","ability","dc","reason"], "additionalProperties": False}, "strict": True,
     },
     {
+        "type": "function", "name": "set_character_mechanics",
+        "description": "Set or correct authoritative mechanical character values. Use for starting HP/AC/level after quick creation or when rules/advancement change them; players do not directly edit these fields.",
+        "parameters": {"type": "object", "properties": {"character_name": {"type": "string"}, "hp": {"type": ["integer","null"]}, "max_hp": {"type": ["integer","null"]}, "armor_class": {"type": ["integer","null"]}, "level": {"type": ["integer","null"]}, "reason": {"type": "string"}}, "required": ["character_name","hp","max_hp","armor_class","level","reason"], "additionalProperties": False}, "strict": True,
+    },
+    {
         "type": "function", "name": "render_card",
         "description": "Show a rich card for an important NPC, monster, item, quest, clue, faction, or location.",
         "parameters": {"type": "object", "properties": {"card_type": {"type": "string", "enum": ["npc","monster","item","quest","clue","location","faction"]}, "title": {"type": "string"}, "subtitle": {"type": "string"}, "markdown": {"type": "string"}}, "required": ["card_type","title","subtitle","markdown"], "additionalProperties": False}, "strict": True,
@@ -246,7 +297,7 @@ DM_TOOLS: list[dict[str, Any]] = [
     {
         "type": "function", "name": "propose_state_patch",
         "description": "Propose a small durable campaign update. Local host state is authoritative and may validate or approve the patch.",
-        "parameters": {"type": "object", "properties": {"reason": {"type": "string"}, "scene_title": {"type": ["string","null"]}, "scene_description": {"type": ["string","null"]}, "journal_append": {"type": ["string","null"]}, "hp_delta": {"type": ["integer","null"]}, "quest_title": {"type": ["string","null"]}, "quest_note": {"type": ["string","null"]}, "loot_name": {"type": ["string","null"]}, "loot_description": {"type": ["string","null"]}}, "required": ["reason","scene_title","scene_description","journal_append","hp_delta","quest_title","quest_note","loot_name","loot_description"], "additionalProperties": False}, "strict": True,
+        "parameters": {"type": "object", "properties": {"reason": {"type": "string"}, "scene_title": {"type": ["string","null"]}, "scene_description": {"type": ["string","null"]}, "journal_append": {"type": ["string","null"]}, "character_name": {"type": ["string","null"]}, "hp_delta": {"type": ["integer","null"]}, "quest_title": {"type": ["string","null"]}, "quest_note": {"type": ["string","null"]}, "loot_name": {"type": ["string","null"]}, "loot_description": {"type": ["string","null"]}}, "required": ["reason","scene_title","scene_description","journal_append","character_name","hp_delta","quest_title","quest_note","loot_name","loot_description"], "additionalProperties": False}, "strict": True,
     },
     {
         "type": "function", "name": "set_atmosphere",
@@ -293,14 +344,40 @@ async def _host_online(room: str) -> bool:
 
 @app.get("/api/config")
 async def api_config():
+    redis_ok = await redis_available() if MODE == "public" and REDIS_URL else False
     return {
         "mode": MODE,
         "public_origin": os.environ.get("LANTERN_PUBLIC_ORIGIN", "https://dnd.waylonwalker.com"),
         "companion_origin": os.environ.get("LANTERN_COMPANION_ORIGIN", "http://127.0.0.1:8765"),
         "signaling": MODE == "public",
-        "multi_replica": bool(redis_client),
+        "signaling_healthy": (redis_ok if REDIS_URL else True),
+        "multi_replica": bool(REDIS_URL and redis_ok),
         "draining": draining,
     }
+
+
+@app.get("/api/qr.svg")
+async def api_qr_svg(text: str):
+    if not text or len(text) > 1024:
+        raise HTTPException(400, "invalid QR payload")
+    image = qrcode.make(text, image_factory=qrcode.image.svg.SvgPathImage, box_size=7, border=2)
+    import io
+    buf = io.BytesIO()
+    image.save(buf)
+    return Response(buf.getvalue(), media_type="image/svg+xml", headers={"Cache-Control": "no-store"})
+
+
+@app.get("/favicon.ico")
+async def favicon():
+    icon = ASSETS / "icons" / "game" / "dungeon-gate.svg"
+    if icon.exists():
+        return FileResponse(icon, media_type="image/svg+xml", headers={"Cache-Control": "public, max-age=86400"})
+    return Response(status_code=204)
+
+
+@app.get("/download/companion.py")
+async def download_companion():
+    return FileResponse(Path(__file__).resolve(), media_type="text/x-python", filename="lantern_table_companion.py")
 
 
 @app.get("/api/ice")
@@ -344,6 +421,11 @@ async def internal_drain(request: Request):
 async def ws_room(websocket: WebSocket, room: str, peer_id: str):
     if draining:
         await websocket.close(code=1013, reason="server draining")
+        return
+    if MODE == "public" and REDIS_URL and not await redis_available():
+        await websocket.accept()
+        await websocket.send_json({"type": "service_unavailable", "message": "Table signaling is starting; please retry shortly."})
+        await websocket.close(code=1013, reason="signaling backend unavailable")
         return
     role = websocket.query_params.get("role", "player")
     room = "".join(c for c in room.upper() if c.isalnum() or c == "-")[:24]
@@ -439,7 +521,9 @@ async def health_live():
 async def health_ready():
     if draining:
         return JSONResponse({"status": "draining"}, status_code=503)
-    return {"status": "ready", "mode": MODE, "multi_replica": bool(redis_client)}
+    if MODE == "public" and REDIS_URL and not await redis_available():
+        return JSONResponse({"status": "waiting-for-valkey", "mode": MODE}, status_code=503)
+    return {"status": "ready", "mode": MODE, "multi_replica": bool(REDIS_URL)}
 
 
 @app.get("/")
@@ -450,7 +534,7 @@ async def index():
 
 
 @app.get("/auth/start")
-async def auth_start():
+async def auth_start(return_to: str | None = None):
     if MODE == "public":
         raise HTTPException(409, "ChatGPT sign-in runs on the host device companion, not the public signaling service")
     state = secrets.token_urlsafe(32)
@@ -458,7 +542,7 @@ async def auth_start():
     verifier = secrets.token_urlsafe(64)
     challenge = b64url(hashlib.sha256(verifier.encode()).digest())
     pending.clear()
-    pending.update(state=state, nonce=nonce, verifier=verifier)
+    pending.update(state=state, nonce=nonce, verifier=verifier, return_to=validated_return_to(return_to))
 
     existing = current_creds()
     client_id = existing.get("client_id") if existing else "dynamic_agent_client"
@@ -539,8 +623,9 @@ async def auth_callback(request: Request):
         "saved_at": time.time(),
     }
     atomic_private_json(CRED_PATH, record)
+    return_to = auth_return_url(pending.get("return_to") or f"http://{HOST}:{PORT}/")
     pending.clear()
-    return RedirectResponse("/?connected=1")
+    return RedirectResponse(return_to)
 
 
 @app.get("/auth/logout")
@@ -579,6 +664,9 @@ async def api_models():
 
 def build_history(body: dict[str, Any]) -> list[dict[str, str]]:
     history: list[dict[str, str]] = []
+    opening = str(body.get("opening_request") or "").strip()
+    if opening:
+        history.append({"role": "user", "content": f"[TABLE DIRECTIVE — do not quote this instruction] {opening}"})
     for message in body.get("messages", [])[-20:]:
         if message.get("who") == "System":
             continue
@@ -599,12 +687,14 @@ PLAY STYLE
 - Respect the campaign controls: {json.dumps(settings, ensure_ascii=False)}
 - The campaign is intentionally lazy-built. Invent only what is needed now, preserve established facts, and let the table add detail later.
 - Do not fabricate dice results. Use request_roll only when uncertainty matters.
+- Players own character identity/background, but mechanical fields (HP, max HP, AC, level, conditions, location) are game-authoritative. Use set_character_mechanics to establish/correct starting stats and propose_state_patch for damage/healing.
 - Treat local host state as authoritative.
 
 UI AND GAME TOOLS
 - Always call set_next_moves exactly once per DM turn with 2-5 concrete options. Players may still type anything.
 - Use render_card for important NPCs, monsters, clues, items, factions, quests, or locations when a compact reference helps.
-- Use propose_state_patch for durable changes. Keep patches small and explain why.
+- Use propose_state_patch for durable changes. When applying HP changes, name the affected character. Keep patches small and explain why.
+- Use set_character_mechanics when a new quick-start character needs authoritative starting HP/AC/level. Do this early in the opening if the sheet still has placeholder mechanics.
 - Use suggest_visual_prompt when art would materially help. Lantern Table does not generate images; provide a polished prompt for the user to copy elsewhere.
 
 ATMOSPHERE TOOL

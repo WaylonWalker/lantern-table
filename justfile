@@ -82,3 +82,16 @@ validate:
 
 delete:
     kubectl delete -k k8s --ignore-not-found
+
+# Production smoke test after a rollout.
+doctor:
+    @echo "== Kubernetes =="
+    kubectl -n {{namespace}} get deploy,po,svc,ingress,pdb -o wide
+    @echo "== Valkey =="
+    kubectl -n {{namespace}} exec deployment/lantern-valkey -- valkey-cli ping
+    @echo "== Public health =="
+    curl -fsS https://dnd.waylonwalker.com/health/live; echo
+    curl -fsS https://dnd.waylonwalker.com/health/ready; echo
+    @echo "== Runtime config =="
+    curl -fsS https://dnd.waylonwalker.com/api/config; echo
+    @echo "Lantern Table doctor passed"
