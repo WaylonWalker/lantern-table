@@ -22,6 +22,10 @@ image:
 companion:
     LANTERN_MODE=companion ./dnd_chatgpt_server.py
 
+# Run a hot-reloading, single-player local app with the companion enabled.
+serve:
+    LANTERN_MODE=companion LANTERN_RELOAD=1 ./dnd_chatgpt_server.py
+
 # Build the public signaling/UI image.
 build:
     {{engine}} build --pull -t {{image}} .
@@ -50,13 +54,38 @@ deploy-latest:
 
 # Create/update optional Cloudflare TURN credentials without writing them to Git.
 turn-secret:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if [[ -z "${CLOUDFLARE_TURN_KEY_ID:-}" || -z "${CLOUDFLARE_TURN_API_TOKEN:-}" ]]; then
+      cat <<'EOF'
+    Cloudflare TURN setup:
+      1. Open https://dash.cloudflare.com/ and select your account.
+      2. Open Realtime -> TURN and create a TURN key.
+      3. Copy the TURN Key ID and its generated key token.
+         The token is shown only when the key is created. Keep it private.
+      Docs: https://developers.cloudflare.com/realtime/turn/generate-credentials/
+
+    Press Enter when you have the Key ID and token ready to paste.
+    EOF
+      read -r -p "Ready? Press Enter to continue: " _
+      if [[ -z "${CLOUDFLARE_TURN_KEY_ID:-}" ]]; then
+        read -r -p "Paste TURN Key ID: " CLOUDFLARE_TURN_KEY_ID
+      fi
+      if [[ -z "${CLOUDFLARE_TURN_API_TOKEN:-}" ]]; then
+        read -r -s -p "Paste TURN key token (hidden): " CLOUDFLARE_TURN_API_TOKEN
+        printf '\n'
+      fi
+    fi
+    test -n "${CLOUDFLARE_TURN_KEY_ID:-}" || { echo "TURN Key ID is required" >&2; exit 2; }
+    test -n "${CLOUDFLARE_TURN_API_TOKEN:-}" || { echo "TURN key token is required" >&2; exit 2; }
     kubectl apply -f k8s/namespace.yaml >/dev/null
-    test -n "${CLOUDFLARE_TURN_KEY_ID:-}" || (echo "CLOUDFLARE_TURN_KEY_ID is required" >&2; exit 2)
-    test -n "${CLOUDFLARE_TURN_API_TOKEN:-}" || (echo "CLOUDFLARE_TURN_API_TOKEN is required" >&2; exit 2)
     kubectl -n {{namespace}} create secret generic lantern-table-turn \
       --from-literal=CLOUDFLARE_TURN_KEY_ID="$CLOUDFLARE_TURN_KEY_ID" \
       --from-literal=CLOUDFLARE_TURN_API_TOKEN="$CLOUDFLARE_TURN_API_TOKEN" \
       --dry-run=client -o yaml | kubectl apply -f -
+    kubectl -n {{namespace}} rollout restart deployment/{{app}}
+    kubectl -n {{namespace}} rollout status deployment/{{app}} --timeout=240s
+    just doctor
 
 render:
     kubectl kustomize k8s
@@ -79,7 +108,8 @@ logs-valkey:
 
 validate:
     python -m py_compile dnd_chatgpt_server.py
-    if command -v node >/dev/null; then node --check assets/app.js; fi
+    python -m py_compile scripts/check_websocket.py scripts/wss_multiplayer_smoke.py
+    if command -v node >/dev/null; then node --check assets/app.js && node --check scripts/webrtc_smoke.mjs && node --check assets/rules5e.mjs && node --check assets/campaign-scenes.mjs && node --check assets/audio-core.mjs && node --check assets/audio-service.mjs && node --test tests/*.test.mjs; fi
     if command -v kubectl >/dev/null; then kubectl kustomize k8s >/dev/null; fi
     @echo "Lantern Table validation passed"
 
@@ -95,6 +125,22 @@ doctor:
     @echo "== Public health =="
     curl -fsS https://dnd.waylonwalker.com/health/live; echo
     curl -fsS https://dnd.waylonwalker.com/health/ready; echo
+    @echo "== WebSocket signaling upgrade =="
+    python scripts/check_websocket.py "${LANTERN_PUBLIC_URL:-https://dnd.waylonwalker.com}"
+    @echo "== Host-authoritative WSS gameplay protocol =="
+    python scripts/wss_multiplayer_smoke.py "${LANTERN_PUBLIC_URL:-https://dnd.waylonwalker.com}"
     @echo "== Runtime config =="
     curl -fsS https://dnd.waylonwalker.com/api/config; echo
     @echo "Lantern Table doctor passed"
+
+# Host-only semantic audio events and shared loop-state resync smoke test.
+audio-protocol-smoke:
+    python scripts/audio_protocol_smoke.py "${LANTERN_PUBLIC_URL:-https://dnd.waylonwalker.com}"
+
+# Optional experimental WebRTC peer transport smoke test.
+smoke-webrtc:
+    node scripts/webrtc_smoke.mjs
+
+# Public host/player WebSocket gameplay protocol, including cross-pod routing.
+smoke-multiplayer:
+    python scripts/wss_multiplayer_smoke.py "${LANTERN_PUBLIC_URL:-https://dnd.waylonwalker.com}"

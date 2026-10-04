@@ -20,7 +20,11 @@ RUN uv pip install --system \
     'httpx>=0.28' \
     'PyJWT[crypto]>=2.10' \
     'redis>=6.0' \
-    'qrcode>=8.0'
+    'qrcode>=8.0' \
+    'websockets>=13.0'
+
+# Fail the image build if Uvicorn cannot load its WebSocket protocol.
+RUN python -c "import websockets; import uvicorn.protocols.websockets.websockets_impl"
 
 COPY --chown=lantern:lantern dnd_chatgpt_server.py dnd_localfirst_demo.html ./
 COPY --chown=lantern:lantern assets ./assets

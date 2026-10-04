@@ -5,8 +5,9 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
 <meta name="theme-color" content="#0d1017" />
 <title>Lantern Table — local-first D&D</title>
-<link rel="icon" href="/favicon.ico" />
-<link rel="stylesheet" href="/assets/app.css?v=character-sheet-5" />
+<link rel="icon" type="image/svg+xml" href="/assets/logo.svg?v=1" />
+<link rel="stylesheet" href="/assets/app.css?v=scene-authority-1" />
+<link rel="stylesheet" href="/assets/dnd-fx.css" />
 <script>setTimeout(()=>document.documentElement.classList.remove('booting'),1800)</script>
 </head>
 <body>
@@ -59,13 +60,16 @@
       <button data-view="play" class="active"><img src="/assets/icons/tabler/message-circle.svg" alt=""/><span>Play</span></button>
       <button data-view="campaign"><img src="/assets/icons/tabler/book-2.svg" alt=""/><span>Campaign</span></button>
       <button data-view="character"><img src="/assets/icons/tabler/users.svg" alt=""/><span>Character</span></button>
+      <button data-view="characters"><img src="/assets/icons/tabler/users.svg" alt=""/><span>People</span></button>
       <button data-view="timeline"><img src="/assets/icons/tabler/timeline.svg" alt=""/><span>Timeline</span></button>
       <button data-view="map"><img src="/assets/icons/tabler/map.svg" alt=""/><span>Map & Draw</span></button>
       <button data-view="gallery"><img src="/assets/icons/tabler/photo.svg" alt=""/><span>Images</span></button>
       <button data-view="settings"><img src="/assets/icons/tabler/settings.svg" alt=""/><span>Settings</span></button>
+      <button id="worldNotesOpen" type="button"><img src="/assets/icons/tabler/book-2.svg" alt=""/><span>World notes</span></button>
     </nav>
     <div class="rail-status">
       <div class="status-row"><span class="status-dot" id="saveDot"></span><span id="saveText">Saved locally</span></div>
+      <div class="status-row"><span class="status-dot bad" id="dmDot"></span><span id="dmText">DM offline</span></div>
       <div class="status-row"><span class="status-dot dim" id="networkDot"></span><span id="networkText">Solo</span></div>
     </div>
   </aside>
@@ -75,25 +79,33 @@
       <div class="scene-title-wrap"><div class="eyebrow" id="sceneEyebrow">Current scene</div><h2 id="topSceneTitle">Lantern Room</h2></div>
       <div class="top-actions">
         <button id="themeQuick" class="icon-button" title="Atmosphere"><span aria-hidden="true">◐</span></button>
-        <button id="audioQuick" class="icon-button" title="Narration audio"><img src="/assets/icons/tabler/volume-2.svg" alt=""/></button>
+        <button id="audioQuick" class="icon-button" title="Open audio soundboard" aria-label="Open audio soundboard"><img src="/assets/icons/tabler/volume-2.svg" alt=""/></button>
+        <button id="worldNotesQuick" class="icon-button" title="World notes" aria-label="World notes"><img src="/assets/icons/tabler/book-2.svg" alt=""/></button>
         <button id="tableQuick" class="button compact"><img src="/assets/icons/tabler/users.svg" alt=""/><span id="tableQuickLabel">Invite</span></button>
       </div>
     </header>
 
     <section id="view-play" class="view active play-view">
+      <section id="combatPanel" class="combat-panel panel-card hidden" aria-live="polite"></section>
       <div id="sceneHero" class="scene-hero spring-surface">
         <div><div class="eyebrow">Now</div><h1 id="sceneTitle">Lantern Room</h1><p id="sceneText">A warm room with an old oak table and too many stories waiting to happen.</p></div>
         <div id="sceneBadges" class="scene-badges"></div>
       </div>
+      <div class="narration-controls"><div id="narrationActivity" class="narration-activity hidden" role="status" aria-live="polite"><span class="narration-spinner" aria-hidden="true"></span><div class="narration-activity-copy"><strong id="narrationActivityText">Preparing narration</strong><span id="narrationActivityHint"></span><span class="narration-progress-track"><i id="narrationProgress"></i></span></div><button id="narrationActivityDismiss" class="narration-dismiss hidden" type="button" aria-label="Dismiss narration status">×</button></div><div class="narration-buttons"><button id="narrationStart" class="button ghost" type="button" title="Narrate all DM messages">▶ Narrate messages</button><button id="narrationToggle" class="button ghost" type="button">Ⅱ Pause</button></div></div>
+      <div id="narrationFollower" class="narration-follower hidden" aria-live="off"><div class="narration-follower-label">Now speaking</div><div id="narrationFollowerText" class="voice-sample"></div></div>
       <div id="transcript" class="transcript" aria-live="polite"></div>
       <div id="toolShelf" class="tool-shelf"></div>
       <div class="composer glass">
         <textarea id="action" rows="2" placeholder="What do you do?" aria-label="Player action"></textarea>
         <div class="composer-bottom">
-          <div id="diceStrip" class="dice-strip"></div>
-          <div class="composer-actions"><button id="stopStream" class="button ghost hidden">Stop</button><button id="send" class="button primary">Do it <span>↵</span></button></div>
+          <div class="composer-actions"><button id="dictationToggle" class="button ghost" type="button" aria-pressed="false">🎙 Dictate</button><button id="stopStream" class="button ghost hidden">Stop</button><button id="send" class="button primary">Do it <span>↵</span></button></div>
         </div>
       </div>
+    </section>
+
+    <section id="view-characters" class="view content-view">
+      <div class="view-heading"><div><div class="eyebrow">Campaign memory</div><h1>Characters</h1><p>People the party has met, with the details and history you know.</p></div></div>
+      <div class="entity-directory"><aside class="entity-browser panel-card"><label class="entity-search-label">Search people<input id="entitySearch" type="search" placeholder="Name, alias, role, or place" /></label><div class="entity-filters"><select id="entityTypeFilter" aria-label="Filter by character type"><option value="">All types</option><option value="pc">Player characters</option><option value="npc">NPCs</option><option value="companion">Companions</option><option value="villain">Villains</option><option value="creature">Creatures</option></select><select id="entityStatusFilter" aria-label="Filter by status"><option value="">All statuses</option><option value="alive">Alive</option><option value="dead">Dead</option><option value="missing">Missing</option></select><select id="entityRelationFilter" aria-label="Filter by relationship"><option value="">All relationships</option><option value="party">Party</option><option value="ally">Allies</option><option value="neutral">Neutral</option><option value="hostile">Hostile</option><option value="unknown">Unknown</option></select><select id="entitySort" aria-label="Sort characters"><option value="recent">Recently seen</option><option value="first">First met</option><option value="name">Name</option><option value="relationship">Relationship</option></select></div><div id="entityDirectory" class="entity-directory-list"></div></aside><article id="entityDetail" class="entity-detail panel-card"></article></div>
     </section>
 
     <section id="view-campaign" class="view content-view">
@@ -102,6 +114,7 @@
         <article class="panel-card"><h3>Game style</h3><div class="form-grid" id="campaignSettingsForm"></div></article>
         <article class="panel-card"><h3>Permissions</h3><p class="muted">Host is authoritative. Each player owns their character by default.</p><div id="permissionsForm" class="toggle-list"></div></article>
         <article class="panel-card"><h3>Table access</h3><div id="multiplayerPanel"></div></article>
+        <article class="panel-card"><h3>AI usage</h3><div id="campaignUsage"></div></article>
         <article class="panel-card"><h3>World notes</h3><textarea id="journal" rows="12" placeholder="Facts the DM should preserve..."></textarea></article>
       </div>
     </section>
@@ -150,7 +163,8 @@
       <div class="view-heading"><div><div class="eyebrow">Local preferences</div><h1>Settings</h1><p>Visual and audio preferences live on this device. The DM can suggest atmosphere, but you stay in control.</p></div></div>
       <div class="card-grid two">
         <article class="panel-card"><h3>Appearance</h3><label>Color mode<select id="colorMode"><option value="follow">Follow DM theme</option><option value="dark">Prefer dark</option><option value="light">Prefer light</option></select></label><label>Theme<select id="themeSelect"></select></label><div class="toggle-row"><span><b>Let DM change atmosphere</b><small>Theme/effects can follow the story.</small></span><input id="dmThemeToggle" type="checkbox" checked /></div><div class="toggle-row"><span><b>Environmental effects</b><small>Snow, rain, dust, light, water and more.</small></span><input id="effectsToggle" type="checkbox" checked /></div><div class="toggle-row"><span><b>Motion</b><small>Physics-style springs and transitions.</small></span><input id="motionToggle" type="checkbox" checked /></div><label>Effect intensity<input id="effectIntensity" type="range" min="0" max="100" value="35" /></label><div class="button-row"><button id="effectsFollowDm" class="button compact">Use DM effects</button></div><div id="effectPicker" class="effect-picker"></div><p class="small-note">Tapping an effect enters local preview override. “Use DM effects” returns to the scene effects chosen by the DM.</p></article>
-        <article class="panel-card"><h3>Narration</h3><label>Voice mode<select id="voiceMode"><option value="off">Off</option><option value="system">System voice · free</option><option value="kokoro">Kokoro local cinematic · free after download</option></select></label><label>Voice<select id="voiceSelect"></select></label><label>Style<select id="voiceStyle"><option value="normal">Normal</option><option value="creepy">Creepy</option><option value="ancient">Ancient</option><option value="urgent">Urgent</option></select></label><div class="toggle-row"><span><b>Auto-narrate DM</b><small>Speak complete sentences as they arrive.</small></span><input id="autoNarrate" type="checkbox" /></div><button id="testVoice" class="button">Test voice</button><div id="kokoroStatus" class="small-note">Kokoro downloads an open local TTS model on first use. WebGPU is preferred; WASM is the fallback.</div></article>
+        <article class="panel-card"><h3>Narration</h3><label>Voice mode<select id="voiceMode"><option value="off">Off</option><option value="system">System voice · free</option><option value="kokoro">Kokoro local cinematic · free after download</option></select></label><label>Voice<select id="voiceSelect"></select></label><label>Kokoro performance<select id="kokoroBackend"><option value="auto">Automatic · WebGPU fp16, then WASM q8</option><option value="webgpu">Prefer WebGPU fp16</option><option value="wasm">WASM q8 · lower memory</option></select></label><label>Delivery effect<select id="voiceStyle"><option value="normal">Normal</option><option value="creepy">Creepy</option><option value="ancient">Ancient</option><option value="urgent">Urgent</option></select></label><p class="small-note">Delivery effects adjust speaking rate and pitch; Kokoro also adds a subtle audio filter. They are app effects, not extra model voices.</p><div class="toggle-row"><span><b>Auto-narrate DM</b><small>Speak complete sentences as they arrive.</small></span><input id="autoNarrate" type="checkbox" /></div><button id="testVoice" class="button">Test voice</button><div id="kokoroStatus" class="small-note" role="status" aria-live="polite">Kokoro downloads an open local TTS model on first use. Automatic mode tries a half-size WebGPU model, then falls back to the smaller-memory WASM model. Use Test voice to compare this device.</div><p class="small-note">If the model host omits download size metadata, the console may show a content-length warning. The file still downloads; percentage progress may be unavailable.</p><div id="voiceSample" class="voice-sample hidden" aria-live="off"></div></article>
+        <article class="panel-card"><h3>Test table audio</h3><p class="muted">Preview the built in pack on this device. These tests never send audio to players.</p><div class="audio-test-buttons"><button id="audioTestSfx" class="button" type="button">▶ Test heavy knock</button><button id="audioTestAmbience" class="button" type="button">◌ Test forest ambience</button><button id="audioTestMusic" class="button" type="button">♫ Test town music</button><button id="audioTestStop" class="button danger" type="button">■ Stop preview</button></div><p id="audioTestStatus" class="small-note" role="status" aria-live="polite">Choose a preview. Your local volume and mute settings apply.</p></article>
         <article class="panel-card"><h3>AI Dungeon Master</h3><div id="aiPanel"></div></article>
         <article class="panel-card"><h3>Local data</h3><p class="muted">Campaign state is stored in this browser. The public signaling service does not persist it.</p><div class="button-row"><button id="exportSave" class="button"><img src="/assets/icons/tabler/download.svg" alt=""/> Export campaign</button><label class="button"><img src="/assets/icons/tabler/upload.svg" alt=""/> Import campaign<input id="importSave" type="file" accept="application/json,.json,.lantern" hidden /></label><button id="resetSave" class="button danger">Reset</button></div><hr/><h4>Returning player pass</h4><p class="muted">A Player Pass carries your stable local player ID and character draft to another device. Treat it like a private table credential.</p><div class="button-row"><button id="exportPlayerPass" class="button">Export Player Pass</button><label class="button">Import Player Pass<input id="importPlayerPass" type="file" accept="application/json,.json,.lantern-player" hidden /></label></div></article>
       </div>
@@ -167,17 +181,26 @@
   <nav class="mobile-nav glass" aria-label="Mobile primary">
     <button data-view="play" class="active"><img src="/assets/icons/tabler/message-circle.svg" alt=""/><span>Play</span></button>
     <button data-view="character"><img src="/assets/icons/tabler/users.svg" alt=""/><span>Hero</span></button>
+    <button data-view="characters"><img src="/assets/icons/tabler/users.svg" alt=""/><span>People</span></button>
     <button data-view="timeline"><img src="/assets/icons/tabler/timeline.svg" alt=""/><span>History</span></button>
     <button data-view="map"><img src="/assets/icons/tabler/map.svg" alt=""/><span>Map</span></button>
     <button data-view="settings"><img src="/assets/icons/tabler/settings.svg" alt=""/><span>More</span></button>
   </nav>
 </div>
 
+<div id="entityHoverCard" class="entity-hover-card" role="dialog" aria-label="Character preview" hidden></div>
 <div id="toastStack" class="toast-stack" aria-live="polite"></div>
+<nav class="page-scroll-controls glass" aria-label="Page navigation">
+  <button id="scrollToTop" aria-label="Scroll to top" title="Scroll to top">↑</button>
+  <button id="scrollToBottom" aria-label="Scroll to bottom" title="Scroll to bottom">↓</button>
+</nav>
 <div id="themeSheet" class="bottom-sheet hidden"><div class="sheet-backdrop" data-close-sheet></div><div class="sheet-card glass"><div class="sheet-handle"></div><h3>Atmosphere</h3><div id="quickThemeGrid" class="quick-theme-grid"></div></div></div>
 <div id="tableSheet" class="bottom-sheet hidden"><div class="sheet-backdrop" data-close-sheet></div><div class="sheet-card glass"><div class="sheet-handle"></div><h3>Table connection</h3><div id="tableSheetBody"></div></div></div>
 <div id="aiSetupSheet" class="bottom-sheet hidden"><div class="sheet-backdrop" data-close-sheet></div><div class="sheet-card glass"><div class="sheet-handle"></div><h3>Connect the AI Dungeon Master</h3><div id="aiSetupBody"></div></div></div>
+<div id="worldNotesSheet" class="bottom-sheet hidden" role="dialog" aria-modal="true" aria-labelledby="worldNotesTitle"><div class="sheet-backdrop" data-close-sheet></div><div class="sheet-card glass world-notes-card"><div class="sheet-handle"></div><div class="world-notes-heading"><h3 id="worldNotesTitle">World notes</h3><button class="icon-button" type="button" data-close-sheet aria-label="Close world notes" title="Close">×</button></div><div id="worldNotesText" class="world-notes-text"></div><div class="world-notes-actions"><button id="worldNotesListen" class="button primary" type="button">▶ Listen</button><button id="worldNotesStop" class="button" type="button">■ Stop</button><button id="worldNotesEdit" class="button ghost" type="button">Edit notes</button></div></div></div>
+<div id="audioSheet" class="bottom-sheet audio-sheet hidden" role="dialog" aria-modal="true" aria-labelledby="audioTitle"><div class="sheet-backdrop" data-close-sheet></div><section class="sheet-card glass audio-card"><div class="sheet-handle"></div><div class="audio-heading"><div><div class="eyebrow">Soundboard</div><h3 id="audioTitle">Table audio</h3></div><button id="audioUnlock" class="button compact hidden" type="button">Enable audio</button><button class="icon-button" data-close-sheet aria-label="Close audio">×</button></div><div id="audioQuickSounds" class="audio-quick"></div><label class="audio-search-label">Search sounds<input id="audioSearch" type="search" placeholder="Door, metal, forest…" /></label><div id="audioTabs" class="audio-tabs"><button data-audio-tab="sfx">Sounds</button><button data-audio-tab="ambience">Ambience</button><button data-audio-tab="music">Music</button><button data-audio-tab="favorites">Favorites</button></div><div id="audioCatalogList" class="audio-catalog-list"></div><div class="audio-stops"><button id="stopAmbience" class="button" type="button">Stop Ambience</button><button id="stopMusic" class="button" type="button">Stop Music</button></div><details class="audio-mixer" open><summary>My audio levels</summary><div id="audioMixerControls"></div></details><label class="toggle-row audio-ai-setting"><span><b>AI may trigger audio</b><small>Let the AI DM request cues from this catalog.</small></span><input id="aiAudioEnabled" type="checkbox" /></label><p class="audio-local-note">Volumes and mute affect only this browser. Shared playback is controlled by the host.</p></section></div>
 <input id="portraitUpload" type="file" accept="image/*" hidden />
- <script type="module" src="/assets/app.js?v=character-sheet-5"></script>
+ <script defer src="/assets/dnd-fx.js?v=pointer-perf-1"></script>
+ <script type="module" src="/assets/app.js?v=scene-authority-1"></script>
 </body>
 </html>

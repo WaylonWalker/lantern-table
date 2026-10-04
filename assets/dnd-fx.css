@@ -1,0 +1,69 @@
+/* Lantern Table gameplay material micro-effects. */
+:root{--lt-fx-strength:.35;--lt-fx-x:50%;--lt-fx-y:45%}
+.lt-dnd-fx-canvas{position:fixed;inset:0;width:100%;height:100%;z-index:6;pointer-events:none;opacity:0;transition:opacity .8s ease;contain:strict}
+
+/* Keep material effects on interaction surfaces, not over readable body text. */
+.lt-fx-active :is(.panel-card,.tool-card,.character-card,.gallery-card,.join-card,.scene-hero){position:relative;isolation:isolate}
+.lt-fx-active :is(.panel-card,.tool-card,.character-card,.gallery-card,.join-card,.scene-hero)::before,
+.lt-fx-active :is(.panel-card,.tool-card,.character-card,.gallery-card,.join-card,.scene-hero)::after{content:"";position:absolute;inset:0;border-radius:inherit;pointer-events:none;opacity:calc(.18 + var(--lt-fx-strength)*.54);z-index:2}
+
+/* Material channel --------------------------------------------------------- */
+html[data-lt-material="wet"] :is(.panel-card,.tool-card,.character-card,.gallery-card,.join-card,.scene-hero)::after{
+  background:radial-gradient(circle at 16% 23%,#dff7ffcc 0 1px,#83d8ff55 2px 3px,transparent 4px),radial-gradient(circle at 72% 31%,#fff9 0 1px,#8bd6ff55 2px 4px,transparent 5px),radial-gradient(ellipse at 42% 78%,#bde9ff88 0 1px,transparent 5px),linear-gradient(118deg,transparent 22%,#d9f5ff20 48%,transparent 65%);background-size:41px 37px,57px 49px,73px 61px,100% 100%;box-shadow:inset 0 1px 0 #e8fbff66,inset 0 -9px 20px #4bb5df10;animation:lt-wet-slide 9s linear infinite}
+@keyframes lt-wet-slide{to{background-position:9px 23px,-13px 31px,5px 45px,0 0}}
+
+html[data-lt-material="fire"] :is(.panel-card,.tool-card,.character-card,.gallery-card,.join-card,.scene-hero)::after{
+  inset:auto 0 0;height:54%;border-radius:inherit;background:radial-gradient(ellipse at 10% 100%,#ffd75d 0 8%,#ff681f88 18%,transparent 42%),radial-gradient(ellipse at 35% 100%,#fff19b 0 6%,#ff7b2388 22%,transparent 46%),radial-gradient(ellipse at 63% 100%,#ffc03d 0 7%,#e8481488 24%,transparent 48%),radial-gradient(ellipse at 89% 100%,#ffe77b 0 5%,#ff6a1b88 19%,transparent 45%);filter:blur(.45px);mix-blend-mode:screen;transform-origin:bottom;animation:lt-flame 1.6s ease-in-out infinite alternate}
+@keyframes lt-flame{from{transform:translateY(4px) scaleY(.78);filter:blur(1.2px)}to{transform:translateY(-2px) scaleY(1.08);filter:blur(.35px)}}
+
+html[data-lt-material="cold"] :is(.panel-card,.tool-card,.character-card,.gallery-card,.join-card,.scene-hero)::after{
+  inset:1px;padding:0;border:1px solid #bdeeff8c;background:conic-gradient(from 18deg at 10% 0,#e8fbffbb,transparent 9deg 38deg,#9ee8ff88 46deg,transparent 54deg 88deg,#e8fbff99 98deg,transparent 106deg 360deg),radial-gradient(circle at 8% 10%,#fff9 0 1px,transparent 2px);background-size:100% 100%,18px 18px;background-clip:padding-box;border-radius:inherit;box-shadow:inset 0 0 14px #8de6ff42,inset 0 0 2px #fff;animation:lt-frost 5s ease-in-out infinite alternate}
+@keyframes lt-frost{to{filter:brightness(1.25)}}
+
+html[data-lt-material="hot"] :is(.panel-card,.tool-card,.character-card,.gallery-card,.join-card,.scene-hero)::after{
+  background:repeating-linear-gradient(92deg,transparent 0 12px,#ffb34b12 15px 17px,transparent 20px 31px),radial-gradient(circle at var(--lt-fx-x) var(--lt-fx-y),#ff9a321f,transparent 52%);box-shadow:inset 0 0 18px #ff58162b;filter:blur(.45px);animation:lt-heat 1.15s ease-in-out infinite alternate}
+@keyframes lt-heat{to{transform:translateX(1.5px) skewX(-.6deg);filter:blur(.8px)}}
+
+html[data-lt-material="acid"] :is(.panel-card,.tool-card,.character-card,.gallery-card,.join-card,.scene-hero)::after{
+  background:radial-gradient(circle at 12% 85%,#e7ff6eaa 0 1px,#65ff3155 2px 4px,transparent 5px),radial-gradient(circle at 47% 72%,#dfff46aa 0 2px,#42bd1955 3px 6px,transparent 7px),radial-gradient(circle at 84% 91%,#eeff8aaa 0 1px,#60d51d66 2px 5px,transparent 6px),linear-gradient(0deg,#77df1a24,transparent 58%);background-size:37px 31px,59px 43px,71px 54px,100% 100%;box-shadow:inset 0 -8px 18px #65ff2123;animation:lt-acid 2.8s ease-in-out infinite}
+@keyframes lt-acid{50%{background-position:5px -12px,-4px -18px,8px -24px,0 0;filter:brightness(1.25)}}
+
+html[data-lt-material="grease"] :is(.panel-card,.tool-card,.character-card,.gallery-card,.join-card,.scene-hero)::after{
+  background:conic-gradient(from 40deg at var(--lt-fx-x) var(--lt-fx-y),#65d9ff22,#d977ff25,#ffcf6320,#69ffc51e,#65d9ff22),linear-gradient(115deg,transparent 28%,#ffffff24 43%,transparent 59%);mix-blend-mode:screen;animation:lt-oil 7s linear infinite}
+@keyframes lt-oil{to{filter:hue-rotate(32deg);background-position:0 0,90px 0}}
+
+html[data-lt-material="web"] :is(.panel-card,.tool-card,.character-card,.gallery-card,.join-card,.scene-hero)::after{
+  background:repeating-linear-gradient(24deg,transparent 0 23px,#e9edf277 24px 25px,transparent 26px 48px),repeating-linear-gradient(151deg,transparent 0 31px,#f2f4f666 32px 33px,transparent 34px 63px),radial-gradient(circle at 22% 30%,transparent 0 18px,#fff5 19px 20px,transparent 21px 34px,#fff3 35px 36px,transparent 37px);opacity:calc(.1 + var(--lt-fx-strength)*.36)}
+
+html[data-lt-material="petrified"] :is(.panel-card,.tool-card,.character-card,.gallery-card,.join-card,.scene-hero)::after{
+  background:linear-gradient(115deg,transparent 0 31%,#d8d1c826 32%,transparent 33% 57%,#2228 58%,transparent 59%),linear-gradient(71deg,transparent 0 46%,#eee3 47%,transparent 48%),radial-gradient(circle at 24% 31%,#aaa2 0 2px,transparent 3px),radial-gradient(circle at 71% 62%,#1112 0 2px,transparent 4px);background-size:83px 69px,117px 91px,17px 19px,23px 29px;filter:grayscale(.7) contrast(1.08);box-shadow:inset 0 0 24px #7773}
+
+/* Energy / condition channel --------------------------------------------- */
+html[data-lt-energy="radiant"] :is(.panel-card,.tool-card,.character-card,.gallery-card,.join-card,.scene-hero)::before{inset:0;background:radial-gradient(ellipse at 50% 0%,#fff4 0%,#ffd66524 36%,transparent 74%),radial-gradient(ellipse at 50% 100%,#ffd66518,transparent 68%);box-shadow:inset 0 0 18px #ffe9a233;mix-blend-mode:screen;animation:lt-radiant 5s ease-in-out infinite alternate}
+@keyframes lt-radiant{from{opacity:.2}to{opacity:.48}}
+
+html[data-lt-energy="lightning"] :is(.panel-card,.tool-card,.character-card,.gallery-card,.join-card,.scene-hero)::before{background:linear-gradient(122deg,transparent 0 31%,#cae5ffcc 32% 33%,transparent 34% 47%,#8cbfff99 48% 49%,transparent 50%);box-shadow:inset 0 0 12px #87bfff35,0 0 10px #8ec7ff35;opacity:calc(.12 + var(--lt-fx-strength)*.58);animation:lt-zap 2.7s steps(1,end) infinite}
+@keyframes lt-zap{0%,84%,100%{filter:brightness(.7);transform:none}86%{filter:brightness(2.3);transform:translateX(1px)}88%{filter:brightness(.9);transform:translateX(-1px)}90%{filter:brightness(1.8)}}
+
+html[data-lt-energy="necrotic"] :is(.panel-card,.tool-card,.character-card,.gallery-card,.join-card,.scene-hero)::before{background:radial-gradient(ellipse at 0 100%,#18001acc,transparent 47%),radial-gradient(ellipse at 100% 0,#2c003acc,transparent 45%),repeating-linear-gradient(118deg,transparent 0 29px,#5d1c6555 30px 31px,transparent 32px 64px);box-shadow:inset 0 0 24px #07000977;mix-blend-mode:multiply;animation:lt-necrotic 6s ease-in-out infinite alternate}
+@keyframes lt-necrotic{to{filter:hue-rotate(14deg) brightness(.78)}}
+
+html[data-lt-energy="force"] :is(.panel-card,.tool-card,.character-card,.gallery-card,.join-card,.scene-hero)::before{background:repeating-radial-gradient(circle at var(--lt-fx-x) var(--lt-fx-y),transparent 0 17px,#8abfff46 18px 19px,transparent 20px 35px);box-shadow:inset 0 0 15px #73aaff38;animation:lt-force 3.4s linear infinite}
+@keyframes lt-force{to{background-position:17px 0}}
+
+html[data-lt-energy="psychic"] :is(.panel-card,.tool-card,.character-card,.gallery-card,.join-card,.scene-hero)::before{inset:-2px;background:linear-gradient(90deg,#00ddff22,transparent 24% 76%,#ff3ddb28),repeating-linear-gradient(0deg,transparent 0 5px,#fff1 6px,transparent 7px 12px);box-shadow:-2px 0 0 #39d9ff44,2px 0 0 #ef4aff44;mix-blend-mode:screen;animation:lt-psychic 2.9s ease-in-out infinite}
+@keyframes lt-psychic{50%{transform:translateX(1px) skewX(.35deg);filter:hue-rotate(18deg)}}
+
+html[data-lt-energy="poison"] :is(.panel-card,.tool-card,.character-card,.gallery-card,.join-card,.scene-hero)::before{background:radial-gradient(circle at 10% 120%,#bddf3355,transparent 42%),radial-gradient(circle at 88% -20%,#7daa1f44,transparent 44%);box-shadow:inset 0 0 19px #93b51a25;animation:lt-poison 5.2s ease-in-out infinite alternate}
+@keyframes lt-poison{to{filter:hue-rotate(15deg);opacity:calc(.1 + var(--lt-fx-strength)*.39)}}
+
+html[data-lt-energy="faerie"] :is(.panel-card,.tool-card,.character-card,.gallery-card,.join-card,.scene-hero)::before{inset:-1px;border:1px solid #7ee6ff99;box-shadow:inset 0 0 9px #5bdfff25,0 0 9px #bd78ff55,0 0 15px #6fffba28;animation:lt-faerie 3s ease-in-out infinite alternate}
+@keyframes lt-faerie{to{border-color:#c081ffbb;box-shadow:inset 0 0 10px #b369ff2b,0 0 11px #6dffdc55}}
+
+html[data-lt-energy="darkness"] :is(.panel-card,.tool-card,.character-card,.gallery-card,.join-card,.scene-hero)::before{background:radial-gradient(circle at 50% 45%,transparent 20%,#0008 100%);box-shadow:inset 0 0 25px #0009;mix-blend-mode:multiply;opacity:calc(.12 + var(--lt-fx-strength)*.32)}
+
+html[data-lt-energy="thunder"] :is(.panel-card,.tool-card,.character-card,.gallery-card,.join-card,.scene-hero)::before{background:repeating-radial-gradient(circle at var(--lt-fx-x) var(--lt-fx-y),transparent 0 19px,#9bb8ff55 20px 21px,transparent 22px 42px);opacity:0;animation:lt-thunder 3.2s ease-out infinite}
+@keyframes lt-thunder{0%,72%,100%{opacity:0;transform:scale(.95)}76%{opacity:calc(.12 + var(--lt-fx-strength)*.3);transform:scale(1.02)}90%{opacity:0;transform:scale(1.09)}}
+
+@media(max-width:820px){.lt-dnd-fx-canvas{filter:saturate(.9)}html.lt-fx-active :is(.panel-card,.message,.tool-card)::before,html.lt-fx-active :is(.panel-card,.message,.tool-card)::after{opacity:calc(.10 + var(--lt-fx-strength)*.32)}}
+@media(prefers-reduced-motion:reduce){.lt-dnd-fx-canvas{opacity:.18!important}.lt-fx-active *::before,.lt-fx-active *::after{animation:none!important}}

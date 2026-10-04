@@ -141,6 +141,14 @@ A joining browser bypasses campaign creation, connects to signaling, receives th
 
 OpenAI's current open-source Sign in with ChatGPT plan-sharing flow uses a loopback callback on the user's own device. Because of that, the Kubernetes pod is deliberately **not** the holder of user ChatGPT credentials.
 
+To run the hot-reloading, single-player app locally:
+
+```bash
+just serve
+```
+
+Then open **http://127.0.0.1:8765**. The server watches Python, HTML, CSS, JavaScript, and SVG files and restarts when they change. Refresh the browser to load the updated UI. This runs the host-side companion in the same process, so ChatGPT sign-in is available locally; multiplayer signaling remains disabled.
+
 Run the public service in Kubernetes, then the campaign host runs the included companion locally:
 
 ```bash
@@ -224,15 +232,13 @@ The Deployment is configured with `maxUnavailable: 0`, `maxSurge: 1`, a readines
 
 ### TURN fallback
 
-STUN works without configuration. To enable Cloudflare TURN for restrictive NAT/firewall cases, create a Cloudflare Realtime TURN key and export the two values locally:
+STUN works without configuration. To enable Cloudflare TURN for restrictive NAT/firewall cases, run the interactive setup:
 
 ```bash
-export CLOUDFLARE_TURN_KEY_ID='...'
-export CLOUDFLARE_TURN_API_TOKEN='...'
 just turn-secret
 ```
 
-This creates/updates `lantern-table-turn` in Kubernetes without putting credentials in Git. The server requests short-lived ICE server credentials and returns them to browsers.
+The recipe explains where to create a TURN key in the Cloudflare dashboard, waits for you to get its ID and generated token, then prompts for both (the token input is hidden). It stores them in the `lantern-table-turn` Kubernetes Secret, restarts the app to load them, and runs `doctor`. The server requests short-lived ICE server credentials and returns them to browsers. For scripted use, set `CLOUDFLARE_TURN_KEY_ID` and `CLOUDFLARE_TURN_API_TOKEN` in the environment before running the recipe.
 
 ## Multi-replica signaling
 
@@ -261,3 +267,21 @@ The ChatGPT OAuth callback itself remains on `http://127.0.0.1:8765/auth/callbac
 - launched from `http://127.0.0.1:8765` → returns to the local table
 
 The `return_to` URL is allow-listed to Lantern Table origins so the companion cannot be used as an arbitrary redirector.
+
+### D&D gameplay shader pack
+
+The atmosphere engine also supports gameplay-driven shaders and material states: wet, fire, cold, hot, acid, poison, radiant, necrotic, lightning, thunder, force, psychic, darkness, web, grease, faerie, and petrified. These are visual presentation cues only; they do not invent or apply mechanics by themselves. The DM still uses the actual rules, rolls, conditions, damage, Resistance/Immunity, and state tools separately.
+
+The pack uses an additive WebGL canvas for full-scene energy and CSS micro-materials for buttons/cards/panels. It remains zero-dependency, pauses with page visibility, caps DPR on lower-core devices, honors reduced-motion, and leaves the existing water/underwater/aurora shader renderer intact.
+
+## Rules resolver and character memory
+
+The browser-side rules core targets **2014 fifth edition as represented by SRD 5.1**. It does not claim SRD 5.2.x / 2024 rules compatibility. Structured mechanical events carry compact rule IDs and point to the official 2014 Basic Rules in `assets/rules5e.mjs`. The event log is separate from DM narration, and the host's local campaign state remains canonical.
+
+Combat uses initiative, individual surprise, movement and action tracking, current-turn IDs, basic attacks with a limited weapon set, checks, saves, reactions, and start-of-turn death saves. Freeplay remains outside initiative. Spellcasting, broad monster stat blocks, opportunity attack execution prompts, full condition coverage, rests, healing effects, and class/resource mechanics remain outside this initial slice; unsupported spell actions are rejected. Portraits and persistent NPC/PC records live in local campaign state. The Characters view shows player-visible location knowledge and entity-linked history.
+
+The **90-second combat turn timeout**, 30-second warning, automatic Dodge when legal, and optional reaction timeout decline are Lantern Table procedures, not 2014 rules. Timeout is recorded with a `lantern:procedure:*` source ID.
+
+Scene continuity is stored as canonical state with stable scene and location IDs. The DM uses dedicated `transition_scene` and `update_scene` tools for arrivals and meaningful changes within a location; `propose_state_patch` is for narrative metadata. Scene transitions update the host immediately and appear in the timeline. Atmosphere tools affect visual presentation only. Hidden NPC destinations are kept out of player snapshots; players see their known or last-known location.
+
+No SRD prose is copied into the implementation. Rules metadata links to the [2014 Basic Rules](https://www.dndbeyond.com/sources/dnd/basic-rules-2014/combat) and [SRD 5.1](https://www.dndbeyond.com/srd). If SRD 5.1 text is incorporated later, include the required CC-BY-4.0 attribution and license notice.
