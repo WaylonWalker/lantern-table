@@ -589,7 +589,7 @@ let characterSheetTab='overview';
 function mountCharacterSheetTabs(){
   const form=$('characterForm');
   if(!form)return;
-  const sections=[...form.children].filter(element=>element.classList.contains('sheet-section')||element.classList.contains('sheet-columns'));
+  const sections=[...form.children].filter(element=>(element.classList.contains('sheet-section')&&!element.classList.contains('character-voice'))||element.classList.contains('sheet-columns'));
   if(sections.length!==6)return;
   const labels=[['overview','Overview'],['stats','Stats'],['inventory','Inventory'],['spells','Spells'],['homebrew','Homebrew'],['notes','Notes']];
   const nav=document.createElement('nav');
