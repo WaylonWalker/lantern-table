@@ -170,9 +170,14 @@ textarea.scratch-block-content{resize:vertical;min-height:95px}
 .scratch-block-add select{width:auto;flex:1 1 170px}
 @media(max-width:600px){.scratch-block-toolbar button{flex:1 1 auto}.scratch-block-add button{flex:1 1 100%}}
 
-/* Scratch-inspired Blockly editor. The workspace replaces text-form blocks. */
-.scratch-blockly-canvas{position:relative;width:100%;height:min(68vh,700px);min-height:420px;border:1px solid var(--line);border-radius:14px;overflow:hidden;background:#f7f7fa}
-.scratch-blockly-canvas .blocklySvg{background:#f7f7fa}
-.scratch-blockly-canvas .blocklyToolboxDiv{border-right:1px solid #d9d9df}
-.scratch-builder .scratch-builder-header{margin-bottom:0}
-@media(max-width:600px){.scratch-blockly-canvas{height:65vh;min-height:370px}.scratch-builder{padding:10px}.scratch-builder-header{gap:12px}}
+/* Excalidraw-inspired, dark spatial workspace. */
+.scratch-builder{max-width:none;padding:16px;gap:14px;background:#11151e}
+.scratch-builder-header{padding:8px 8px 16px}
+.scratch-blockly-canvas{position:relative;width:100%;height:min(76vh,860px);min-height:480px;overflow:hidden;border:1px solid #353e51;border-radius:18px;background:#151923;box-shadow:inset 0 0 0 1px #ffffff05,0 16px 36px #0004}
+.scratch-blockly-canvas .blocklySvg{background:#151923}
+.scratch-blockly-canvas .blocklyToolboxDiv{border-right:1px solid #394254;background:#202632!important}
+.scratch-blockly-canvas .blocklyTreeRow,.scratch-blockly-canvas .blocklyToolboxCategory{border-radius:9px}
+.scratch-blockly-canvas .blocklyFlyoutBackground{fill:#252c39}
+.scratch-blockly-canvas .blocklyWidgetDiv,.scratch-blockly-canvas .blocklyDropDownDiv{color:#f4efe6}
+.scratch-builder .button-row{justify-content:flex-end}
+@media(max-width:600px){.scratch-builder{padding:10px}.scratch-blockly-canvas{height:70vh;min-height:450px}.scratch-builder-header{gap:12px}}
