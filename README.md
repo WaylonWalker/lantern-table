@@ -149,7 +149,7 @@ To run the hot-reloading, single-player app locally:
 just serve
 ```
 
-Then open **http://127.0.0.1:8766**. The server watches Python, HTML, CSS, JavaScript, and SVG files and restarts when they change. Refresh the browser to load the updated UI. This runs Lantern Bridge in the same process, so ChatGPT sign-in and fixed loopback runtime discovery are available locally; multiplayer signaling remains disabled.
+Then open **http://127.0.0.1:8768**. The server watches Python, HTML, CSS, JavaScript, and SVG files and restarts when they change. Refresh the browser to load the updated UI. This runs Lantern Bridge in the same process, so ChatGPT sign-in and fixed loopback runtime discovery are available locally; multiplayer signaling remains disabled.
 
 Run the public service in Kubernetes, then the campaign host runs Lantern Bridge locally:
 
@@ -280,10 +280,10 @@ See `CREDITS.md`. The icon SVGs are vendored. Kokoro/kokoro-js is an optional ru
 
 ### Hosted + localhost OAuth return
 
-The ChatGPT OAuth callback itself remains on `http://127.0.0.1:8766/auth/callback`, because the open-source plan-sharing flow requires loopback on the host device. The companion now remembers the UI that launched sign-in and immediately returns there after credentials are saved:
+The ChatGPT OAuth callback itself remains on `http://127.0.0.1:8768/auth/callback`, because the open-source plan-sharing flow requires loopback on the host device. The companion now remembers the UI that launched sign-in and immediately returns there after credentials are saved:
 
 - launched from `https://dnd.waylonwalker.com` → returns to the hosted table
-- launched from `http://127.0.0.1:8766` → returns to the local table
+- launched from `http://127.0.0.1:8768` → returns to the local table
 
 The `return_to` URL is allow-listed to Lantern Table origins so the companion cannot be used as an arbitrary redirector.
 
