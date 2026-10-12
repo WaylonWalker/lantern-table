@@ -765,7 +765,19 @@ function ensureShaderLoop(){
   shaderRAF=requestAnimationFrame(loop)
 }
 function hexRgb(h){h=h.replace('#','');return [parseInt(h.slice(0,2),16),parseInt(h.slice(2,4),16),parseInt(h.slice(4,6),16)]}
-let glowPointerRaf=0;addEventListener('pointermove',e=>{if(!activeEffects.has('lantern')||glowPointerRaf)return;const x=e.clientX/innerWidth*100,y=e.clientY/innerHeight*100;glowPointerRaf=requestAnimationFrame(()=>{glowPointerRaf=0;document.documentElement.style.setProperty('--glow-x',`${x}%`);document.documentElement.style.setProperty('--glow-y',`${y}%`)})},{passive:true});
+let glowPointerRaf=0,glowPointerX=0,glowPointerY=0;
+addEventListener('pointermove',e=>{
+  if(!activeEffects.has('lantern'))return;
+  // client coordinates are CSS pixels relative to the fixed, viewport-sized glow layer.
+  glowPointerX=e.clientX;
+  glowPointerY=e.clientY;
+  if(glowPointerRaf)return;
+  glowPointerRaf=requestAnimationFrame(()=>{
+    glowPointerRaf=0;
+    document.documentElement.style.setProperty('--glow-x',`${glowPointerX}px`);
+    document.documentElement.style.setProperty('--glow-y',`${glowPointerY}px`);
+  });
+},{passive:true});
 
 // Local image store --------------------------------------------------------------
 const assetUrls=new Map();let dbPromise=null;
