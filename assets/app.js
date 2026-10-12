@@ -1535,8 +1535,8 @@ function setCharacterPath(object,path,value){if(!playerEditableCharacterPath(pat
 function editCharacterPath(path,val,type='text'){const c=currentCharacter(),value=type==='number'?Number(val)||0:type==='boolean'?Boolean(val):val;if(rtc.role==='player'||rtc.role==='host'&&state.campaign.dmPlayerId!==state.localPlayer.id){proposeCharacterChange(c,path,value);renderCharacter();return}const mechanical=/^(class|species|subclass|hp|maxHp|ac|level|speed|proficiencyBonus|abilities|saves|skills|conditions|deathSaves|resources|features|spells|inventory|proficiencies)(\.|$)/.test(path);if(rtc.role==='player'&&(!state.campaign.permissions.playersEditOwnCharacter||!playerEditableCharacterPath(path)))return toast('Character stats are controlled by the host');if(mechanical&&(c.mechanicsState==='locked'||state.campaign.mechanicsLockedAt)){if(rtc.role==='player')return toast('Mechanical corrections require the host');const reason=prompt('Reason for this host mechanics correction:');if(!reason?.trim()){renderCharacter();return}const oldValue=path.split('.').reduce((value,key)=>value?.[key],c);setCharacterPath(c,path,value);const correction={eventId:uid('mechanics'),eventType:'host_mechanics_correction',at:nowISO(),sourceRule:'lantern:host-correction',actorId:state.localPlayer.id,targetIds:[c.entityId||c.id],intent:{kind:'host_correction',path,reason:reason.trim()},outcome:{before:oldValue,after:value},mutations:[{entityId:c.entityId||c.id,field:path,value}]};state.mechanicalEvents.push(correction);addEvent('host_mechanics_correction',`${c.name}: ${path} corrected by host`,{actor:state.localPlayer.name,entityId:c.entityId,details:{eventId:correction.eventId,path,reason:reason.trim()}})}else{setCharacterPath(c,path,value);if(mechanical)c.mechanicsState='initialized'}save({broadcast:rtc.role!=='player'});render()}
 function editCharacterList(path,val){editCharacterPath(path,val.split('\n').map(x=>x.trim()).filter(Boolean))}
 function rollAbility(key,label){const c=currentCharacter();submitCombatIntent({kind:'ability_check',ability:key,skill:null,dc:null,openRoll:true,sourceRule:'srd5.1:ability-check',reason:`Unopposed ${label} die`},c.id)}
-// Scratch characters keep their own completely optional fields, separate from 5e mechanics.
-const SCRATCH_GROUPS=[['stats','Custom stats'],['resources','Resources'],['powers','Powers'],['equipment','Equipment'],['progression','Progression']];
+// Freeform scratch character blocks are deliberately independent of 5e statistics.
+const SCRATCH_BLOCK_TYPES={heading:'Heading',sentence:'Sentence',paragraph:'Paragraph',stat:'Custom stat',power:'Power',rule:'Rule',item:'Item'};
 function renderScratchCharacter(){
   const view=$('view-character'),layout=view?.querySelector('.character-layout');
   if(!view||!layout)return;
@@ -1544,56 +1544,61 @@ function renderScratchCharacter(){
   const scratch=getCharacterMode()==='scratch';
   layout.hidden=scratch;
   if(!scratch)return;
-  const c=currentCharacter();
+  const character=currentCharacter();
   const canEdit=rtc.role!=='player'&&canHostEdit();
-  const build=c.customBuild&&typeof c.customBuild==='object'?c.customBuild:{};
-  if(!build.groups||typeof build.groups!=='object')build.groups={};
-  c.customBuild=build;
+  const build=character.customBuild&&typeof character.customBuild==='object'?character.customBuild:{};
+  character.customBuild=build;
+  if(!Array.isArray(build.blocks)){
+    // Preserve any work produced by the earlier scratch editor on this branch.
+    const converted=[];
+    for(const field of ['name','concept','story'])if(build[field])converted.push({id:crypto.randomUUID(),type:field==='story'?'paragraph':'sentence',text:String(field==='name'?'Name: '+build[field]:field==='concept'?'Concept: '+build[field]:build[field])});
+    for(const [group,entries] of Object.entries(build.groups||{}))if(Array.isArray(entries))for(const entry of entries)converted.push({id:crypto.randomUUID(),type:group==='powers'?'power':group==='stats'?'stat':group==='equipment'?'item':'rule',text:[entry.name,entry.details].filter(Boolean).join(': ')});
+    build.blocks=converted;
+  }
   const root=document.createElement('article');root.id='scratch-character-builder';root.className='scratch-builder panel-card';
   const header=document.createElement('header');header.className='scratch-builder-header';
-  const intro=document.createElement('div');
-  const eyebrow=document.createElement('span');eyebrow.className='eyebrow';eyebrow.textContent='Homebrew · From Scratch';
-  const title=document.createElement('h2');title.textContent='Create your own character';
-  const blurb=document.createElement('p');blurb.textContent='A blank canvas. No mandatory ability scores, 5e rules, classes, or levels. Add only what your character needs.';
-  intro.append(eyebrow,title,blurb);
-  const change=document.createElement('button');change.type='button';change.className='button compact';change.textContent='Change creation path';change.onclick=openCharacterPathChooser;
-  header.append(intro,change);root.append(header);
-  if(!canEdit){const note=document.createElement('p');note.className='small-note';note.textContent='Custom character editing is host-only in this first version. You can still view the build.';root.append(note)}
-  const identity=document.createElement('section');identity.className='scratch-builder-identity';
-  identity.innerHTML='<h3>Identity</h3><div class="form-grid two"><label>Character name<input data-scratch-field="name" placeholder="Give your creation a name"></label><label>Species or concept (optional)<input data-scratch-field="concept" placeholder="Whatever you imagine"></label></div><label>Story and appearance (optional)<textarea data-scratch-field="story" rows="3" placeholder="Who are they?"></textarea></label>';
-  root.append(identity);
-  for(const input of identity.querySelectorAll('[data-scratch-field]')){
-    input.value=String(build[input.dataset.scratchField]??'');
-    input.disabled=!canEdit;
-    input.addEventListener('change',()=>{if(!canEdit)return;build[input.dataset.scratchField]=input.value;save()});
-  }
-  for(const [key,title] of SCRATCH_GROUPS){
-    const section=document.createElement('section');section.className='scratch-builder-group';
-    const heading=document.createElement('div');heading.className='scratch-builder-group-heading';
-    const h=document.createElement('h3');h.textContent=title;
-    const add=document.createElement('button');add.type='button';add.className='button compact';add.textContent='+ Add '+title.toLowerCase().replace(/s$/,'');
-    add.disabled=!canEdit;
-    add.onclick=()=>{const rows=Array.isArray(build.groups[key])?build.groups[key]:[];build.groups[key]=[...rows,{name:'',details:''}];save();renderScratchCharacter()};
-    heading.append(h,add);section.append(heading);
-    const entries=Array.isArray(build.groups[key])?build.groups[key]:[];
-    if(!entries.length){const empty=document.createElement('p');empty.className='scratch-builder-empty';empty.textContent='Nothing here yet. Add your first entry whenever you want.';section.append(empty)}
-    entries.forEach((entry,index)=>{
-      const card=document.createElement('div');card.className='scratch-builder-entry';
-      const fields=document.createElement('div');fields.className='form-grid two';
-      const nameLabel=document.createElement('label');nameLabel.textContent='Name';
-      const name=document.createElement('input');name.placeholder='Your own name';name.value=String(entry?.name??'');name.disabled=!canEdit;
-      const detailLabel=document.createElement('label');detailLabel.textContent='Rules, value, or description';
-      const details=document.createElement('textarea');details.rows=2;details.placeholder='Define it however you like';details.value=String(entry?.details??'');details.disabled=!canEdit;
-      name.addEventListener('change',()=>{if(!canEdit)return;entry.name=name.value;save()});
-      details.addEventListener('change',()=>{if(!canEdit)return;entry.details=details.value;save()});
-      nameLabel.append(name);detailLabel.append(details);fields.append(nameLabel,detailLabel);
-      const remove=document.createElement('button');remove.type='button';remove.className='button compact';remove.textContent='Remove';remove.disabled=!canEdit;
-      remove.onclick=()=>{if(!confirm('Remove this '+title.toLowerCase()+' entry?'))return;build.groups[key].splice(index,1);save();renderScratchCharacter()};
-      card.append(fields,remove);section.append(card);
+  const intro=document.createElement('div');const eyebrow=document.createElement('span');eyebrow.className='eyebrow';eyebrow.textContent='Homebrew · From Scratch';
+  const title=document.createElement('h2');title.textContent='Your character, your rules';
+  const note=document.createElement('p');note.textContent='Start with a completely empty page. Add words, sentences, paragraphs, powers, or any rule you invent.';
+  intro.append(eyebrow,title,note);
+  const change=document.createElement('button');change.type='button';change.className='button compact';change.textContent='Change creation path';change.onclick=openCharacterPathChooser;header.append(intro,change);root.append(header);
+  const list=document.createElement('div');list.className='scratch-block-list';root.append(list);
+  const rebuild=()=>{
+    list.replaceChildren();
+    if(!build.blocks.length){const empty=document.createElement('p');empty.className='scratch-builder-empty';empty.textContent='This character has no blocks yet. Create the first one below!';list.append(empty)}
+    build.blocks.forEach((block,index)=>{
+      const row=document.createElement('section');row.className='scratch-block';row.setAttribute('aria-label',SCRATCH_BLOCK_TYPES[block.type]||'Character block');
+      const toolbar=document.createElement('div');toolbar.className='scratch-block-toolbar';
+      const kind=document.createElement('select');kind.setAttribute('aria-label','Block type');kind.disabled=!canEdit;
+      for(const [value,label] of Object.entries(SCRATCH_BLOCK_TYPES)){const option=document.createElement('option');option.value=value;option.textContent=label;kind.append(option)}
+      kind.value=SCRATCH_BLOCK_TYPES[block.type]?block.type:'paragraph';
+      kind.onchange=()=>{block.type=kind.value;save();rebuild()};
+      const up=document.createElement('button'),down=document.createElement('button'),copy=document.createElement('button'),remove=document.createElement('button');
+      for(const [button,label] of [[up,'Move up'],[down,'Move down'],[copy,'Duplicate'],[remove,'Delete']]){button.type='button';button.className='button compact';button.textContent=label;button.setAttribute('aria-label',label+' block');button.disabled=!canEdit}
+      up.disabled=!canEdit||index===0;down.disabled=!canEdit||index===build.blocks.length-1;
+      up.onclick=()=>move(index,-1);down.onclick=()=>move(index,1);
+      copy.onclick=()=>{build.blocks.splice(index+1,0,{...block,id:crypto.randomUUID()});save();rebuild()};
+      remove.onclick=()=>{if(!confirm('Delete this block?'))return;build.blocks.splice(index,1);save();rebuild()};
+      toolbar.append(kind,up,down,copy,remove);
+      const field=document.createElement(['paragraph','rule','power','item'].includes(block.type)?'textarea':'input');
+      field.className='scratch-block-content';field.setAttribute('aria-label',(SCRATCH_BLOCK_TYPES[block.type]||'Character')+' text');
+      if(field.tagName==='TEXTAREA')field.rows=block.type==='paragraph'?4:3;
+      field.placeholder=block.type==='heading'?'Your heading':block.type==='stat'?'Bee Power: 9000':'Write anything here…';
+      field.value=String(block.text||'');field.disabled=!canEdit;
+      field.addEventListener('input',()=>{block.text=field.value;save()});
+      row.append(toolbar,field);list.append(row);
     });
-    root.append(section);
-  }
-  layout.after(root);
+  };
+  function move(index,delta){const other=index+delta;if(other<0||other>=build.blocks.length)return;[build.blocks[index],build.blocks[other]]=[build.blocks[other],build.blocks[index]];save();rebuild()}
+  const addBar=document.createElement('div');addBar.className='scratch-block-add';
+  const type=document.createElement('select');type.setAttribute('aria-label','New block type');
+  for(const [value,label] of Object.entries(SCRATCH_BLOCK_TYPES)){const option=document.createElement('option');option.value=value;option.textContent=label;type.append(option)}
+  type.value='paragraph';type.disabled=!canEdit;
+  const add=document.createElement('button');add.type='button';add.className='button primary';add.textContent='+ Add block';add.disabled=!canEdit;
+  add.onclick=()=>{build.blocks.push({id:crypto.randomUUID(),type:type.value,text:''});save();rebuild();list.lastElementChild?.querySelector('.scratch-block-content')?.focus()};
+  addBar.append(type,add);root.append(addBar);
+  if(!canEdit){const help=document.createElement('p');help.className='small-note';help.textContent='Only the host can edit scratch blocks until character-change approvals support them.';root.append(help)}
+  layout.after(root);rebuild();
 }
 function renderCharacterFull(){
   const c=currentCharacter();Object.assign(c,normalizeCharacter(c));const hp=Math.max(0,Number(c.hp)||0),maxHp=Math.max(1,Number(c.maxHp)||1),hpPercent=Math.min(100,Math.round(hp/maxHp*100));
