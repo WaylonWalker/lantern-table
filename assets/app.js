@@ -1536,28 +1536,80 @@ function editCharacterPath(path,val,type='text'){const c=currentCharacter(),valu
 function editCharacterList(path,val){editCharacterPath(path,val.split('\n').map(x=>x.trim()).filter(Boolean))}
 function rollAbility(key,label){const c=currentCharacter();submitCombatIntent({kind:'ability_check',ability:key,skill:null,dc:null,openRoll:true,sourceRule:'srd5.1:ability-check',reason:`Unopposed ${label} die`},c.id)}
 
+// Practical, flexible homebrew sheet. Entirely independent of fixed D&D 5e values.
+const HOMEBREW_SECTIONS=[['abilities','Abilities & powers'],['stats','Stats & resources'],['inventory','Equipment & items'],['rules','Special rules'],['notes','Notes & backstory']];
 function renderScratchCharacter(){
   const view=$('view-character'),layout=view?.querySelector('.character-layout');
   if(!view||!layout)return;
   view.querySelector('#scratch-character-builder')?.remove();
-  const scratch=getCharacterMode()==='scratch';
-  layout.hidden=scratch;
-  if(!scratch)return;
+  const scratch=getCharacterMode()==='scratch';layout.hidden=scratch;if(!scratch)return;
   const c=currentCharacter(),build=c.customBuild&&typeof c.customBuild==='object'?c.customBuild:{};
   c.customBuild=build;
+  const editable=rtc.role!=='player'&&canHostEdit();
+  if(!build.sheet||typeof build.sheet!=='object')build.sheet={};
+  const sheet=build.sheet;
+  if(!sheet.sections||typeof sheet.sections!=='object')sheet.sections={};
+  // Carry forward content from the original scratch forms without altering their source.
+  if(!sheet.migratedFromGroups){
+    for(const [oldKey,newKey] of [['powers','abilities'],['stats','stats'],['resources','stats'],['equipment','inventory'],['progression','rules']]){
+      for(const entry of Array.isArray(build.groups?.[oldKey])?build.groups[oldKey]:[]){
+        if(!Array.isArray(sheet.sections[newKey]))sheet.sections[newKey]=[];
+        sheet.sections[newKey].push({id:crypto.randomUUID(),name:entry.name||'',description:entry.details||''});
+      }
+    }
+    sheet.name??=build.name||'';sheet.concept??=build.concept||'';sheet.backstory??=build.story||'';
+    sheet.migratedFromGroups=true;
+  }
   const root=document.createElement('article');root.id='scratch-character-builder';root.className='scratch-builder panel-card';
   const header=document.createElement('header');header.className='scratch-builder-header';
-  const intro=document.createElement('div');intro.innerHTML='<span class="eyebrow">Homebrew · From Scratch</span><h2>Character canvas</h2><p>Create your character freely with writing, drawings, shapes, and arrows. No mandatory 5e rules.</p>';
+  const intro=document.createElement('div');intro.innerHTML='<span class="eyebrow">Homebrew · From Scratch</span><h2>Custom character sheet</h2><p>Make a character that works at the table. Everything is optional, and you can add as many custom abilities, stats, rules, and items as you need.</p>';
   const change=document.createElement('button');change.type='button';change.className='button compact';change.textContent='Change creation path';change.onclick=openCharacterPathChooser;
   header.append(intro,change);root.append(header);
-  const canvas=document.createElement('div');canvas.className='character-canvas-mount';root.append(canvas);
-  const status=document.createElement('p');status.className='small-note';status.textContent='Loading canvas…';root.append(status);
+  const field=(parent,label,value,onUpdate,multiline=false)=>{
+    const wrapper=document.createElement('label');wrapper.className='scratch-practical-field';
+    const name=document.createElement('span');name.textContent=label;
+    const input=document.createElement(multiline?'textarea':'input');
+    if(multiline)input.rows=3;else input.type='text';
+    input.value=value||'';input.placeholder=label;input.disabled=!editable;
+    input.addEventListener('change',()=>{onUpdate(input.value);save()});
+    wrapper.append(name,input);parent.append(wrapper);return input;
+  };
+  const basics=document.createElement('section');basics.className='scratch-practical-section';
+  const basicHeading=document.createElement('h3');basicHeading.textContent='Who is your character?';basics.append(basicHeading);
+  const basicGrid=document.createElement('div');basicGrid.className='scratch-practical-grid';
+  field(basicGrid,'Name',sheet.name,value=>sheet.name=value);
+  field(basicGrid,'Species / concept',sheet.concept,value=>sheet.concept=value);
+  field(basicGrid,'Role / class (optional)',sheet.role,value=>sheet.role=value);
+  field(basicGrid,'Level / rank (optional)',sheet.level,value=>sheet.level=value);
+  basics.append(basicGrid);
+  field(basics,'Backstory / appearance',sheet.backstory,value=>sheet.backstory=value,true);
+  root.append(basics);
+  for(const [key,label] of HOMEBREW_SECTIONS){
+    if(!Array.isArray(sheet.sections[key]))sheet.sections[key]=[];
+    const section=document.createElement('section');section.className='scratch-practical-section';
+    const head=document.createElement('div');head.className='scratch-practical-section-head';
+    const h=document.createElement('h3');h.textContent=label;
+    const add=document.createElement('button');add.type='button';add.className='button compact';add.textContent='+ Add';add.disabled=!editable;
+    add.onclick=()=>{sheet.sections[key].push({id:crypto.randomUUID(),name:'',description:''});save();renderScratchCharacter()};
+    head.append(h,add);section.append(head);
+    if(!sheet.sections[key].length){const empty=document.createElement('p');empty.className='scratch-practical-empty';empty.textContent='Nothing added yet.';section.append(empty)}
+    sheet.sections[key].forEach((item,index)=>{
+      const card=document.createElement('div');card.className='scratch-practical-entry';
+      const items=document.createElement('div');items.className='scratch-practical-grid';
+      field(items,key==='stats'?'Stat / resource name':key==='abilities'?'Ability name':key==='inventory'?'Item name':'Title',item.name,value=>item.name=value);
+      field(items,key==='stats'?'Value / maximum':key==='inventory'?'Quantity / charges':'Cost / uses (optional)',item.value,value=>item.value=value);
+      card.append(items);
+      field(card,'Details / effects / rules',item.description,value=>item.description=value,true);
+      const actions=document.createElement('div');actions.className='scratch-practical-actions';
+      const up=document.createElement('button');up.type='button';up.className='button compact';up.textContent='↑';up.title='Move up';up.disabled=!editable||index===0;up.onclick=()=>{[sheet.sections[key][index-1],sheet.sections[key][index]]=[sheet.sections[key][index],sheet.sections[key][index-1]];save();renderScratchCharacter()};
+      const down=document.createElement('button');down.type='button';down.className='button compact';down.textContent='↓';down.title='Move down';down.disabled=!editable||index===sheet.sections[key].length-1;down.onclick=()=>{[sheet.sections[key][index+1],sheet.sections[key][index]]=[sheet.sections[key][index],sheet.sections[key][index+1]];save();renderScratchCharacter()};
+      const remove=document.createElement('button');remove.type='button';remove.className='button compact';remove.textContent='Remove';remove.disabled=!editable;remove.onclick=()=>{if(!confirm('Remove this entry?'))return;sheet.sections[key].splice(index,1);save();renderScratchCharacter()};
+      actions.append(up,down,remove);card.append(actions);section.append(card);
+    });
+    root.append(section);
+  }
+  const footer=document.createElement('p');footer.className='small-note';footer.textContent=editable?'Changes save when you leave a field. Your 5e character data stays separate.':'View only: only the host can edit this character for now.';root.append(footer);
   layout.after(root);
-  import('/assets/character-canvas.mjs').then(({createCharacterCanvas})=>{
-    if(!root.isConnected)return;
-    createCharacterCanvas({mount:canvas,scene:build.canvas||(build.canvas={elements:[],camera:{x:0,y:0,scale:1}}),editable:rtc.role!=='player'&&canHostEdit(),onChange:()=>save()});
-    status.textContent='Autosaved with your character. These drawings describe your homebrew; they do not execute as game rules.';
-  }).catch(error=>{status.textContent='Could not load canvas: '+error.message});
 }
 function renderCharacterFull(){
   const c=currentCharacter();Object.assign(c,normalizeCharacter(c));const hp=Math.max(0,Number(c.hp)||0),maxHp=Math.max(1,Number(c.maxHp)||1),hpPercent=Math.min(100,Math.round(hp/maxHp*100));
