@@ -1588,7 +1588,7 @@ function renderScratchCharacter(){
   const canEdit=rtc.role!=='player'&&canHostEdit();
   const root=document.createElement('article');root.id='scratch-character-builder';root.className='scratch-builder panel-card';
   const header=document.createElement('header');header.className='scratch-builder-header';
-  const intro=document.createElement('div');intro.innerHTML='<span class="eyebrow">Homebrew · From Scratch</span><h2>Build with blocks</h2><p>Drag and snap blocks together like Scratch. Everything starts blank. Your blocks are saved, but do not execute in combat yet.</p>';
+  const intro=document.createElement('div');intro.innerHTML='<span class="eyebrow">Homebrew · From Scratch</span><h2>Character canvas</h2><p>An open, dark canvas inspired by Excalidraw. Drag blocks from the palette, connect them, and create your own rules. Blocks do not execute in combat yet.</p>';
   const change=document.createElement('button');change.type='button';change.className='button compact';change.textContent='Change creation path';change.onclick=openCharacterPathChooser;
   header.append(intro,change);root.append(header);
   const status=document.createElement('p');status.className='small-note';status.textContent='Loading visual blocks…';status.setAttribute('role','status');root.append(status);
@@ -1601,7 +1601,26 @@ function renderScratchCharacter(){
   loadScratchBlockly().then(Blockly=>{
     if(generation!==scratchRenderGeneration||!root.isConnected)return;
     defineScratchBlocks(Blockly);
-    const workspace=Blockly.inject(canvas,{toolbox:SCRATCH_TOOLBOX,trashcan:canEdit,scrollbars:true,move:{scrollbars:true,drag:true,wheel:true},zoom:{controls:true,wheel:true,startScale:0.85,minScale:0.35,maxScale:2},readOnly:!canEdit,renderer:'geras'});
+    const theme=Blockly.Theme.defineTheme('lanternMidnight',{
+      base:Blockly.Themes.Classic,
+      componentStyles:{
+        workspaceBackgroundColour:'#151923',
+        toolboxBackgroundColour:'#202632',
+        toolboxForegroundColour:'#eae6df',
+        flyoutBackgroundColour:'#252c39',
+        flyoutForegroundColour:'#f5eee3',
+        flyoutOpacity:0.97,
+        scrollbarColour:'#6a7486',
+        insertionMarkerColour:'#ffd07a',
+        insertionMarkerOpacity:0.35,
+        cursorColour:'#ffd07a',
+        selectedGlowColour:'#e6b450',
+        selectedGlowOpacity:0.5,
+        replacementGlowColour:'#79bf97',
+        replacementGlowOpacity:0.4
+      }
+    });
+    const workspace=Blockly.inject(canvas,{toolbox:SCRATCH_TOOLBOX,theme,trashcan:canEdit,scrollbars:true,grid:{spacing:24,length:1,colour:'#31394a',snap:false},move:{scrollbars:true,drag:true,wheel:true},zoom:{controls:true,wheel:true,startScale:0.85,minScale:0.35,maxScale:2},readOnly:!canEdit,renderer:'geras'});
     scratchWorkspace=workspace;
     if(build.workspace){try{Blockly.serialization.workspaces.load(build.workspace,workspace)}catch(error){status.textContent='Saved blocks could not be loaded. Your stored data is preserved.';console.warn('Invalid saved scratch workspace',error);return}}
     status.textContent=canEdit?'Drag blocks from the left. Changes save with your character.':'View only: your host manages custom blocks.';
