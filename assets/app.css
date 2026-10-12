@@ -169,3 +169,10 @@ textarea.scratch-block-content{resize:vertical;min-height:95px}
 .scratch-block-add{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding-top:8px;border-top:1px solid var(--line)}
 .scratch-block-add select{width:auto;flex:1 1 170px}
 @media(max-width:600px){.scratch-block-toolbar button{flex:1 1 auto}.scratch-block-add button{flex:1 1 100%}}
+
+/* Scratch-inspired Blockly editor. The workspace replaces text-form blocks. */
+.scratch-blockly-canvas{position:relative;width:100%;height:min(68vh,700px);min-height:420px;border:1px solid var(--line);border-radius:14px;overflow:hidden;background:#f7f7fa}
+.scratch-blockly-canvas .blocklySvg{background:#f7f7fa}
+.scratch-blockly-canvas .blocklyToolboxDiv{border-right:1px solid #d9d9df}
+.scratch-builder .scratch-builder-header{margin-bottom:0}
+@media(max-width:600px){.scratch-blockly-canvas{height:65vh;min-height:370px}.scratch-builder{padding:10px}.scratch-builder-header{gap:12px}}
