@@ -1535,6 +1535,66 @@ function setCharacterPath(object,path,value){if(!playerEditableCharacterPath(pat
 function editCharacterPath(path,val,type='text'){const c=currentCharacter(),value=type==='number'?Number(val)||0:type==='boolean'?Boolean(val):val;if(rtc.role==='player'||rtc.role==='host'&&state.campaign.dmPlayerId!==state.localPlayer.id){proposeCharacterChange(c,path,value);renderCharacter();return}const mechanical=/^(class|species|subclass|hp|maxHp|ac|level|speed|proficiencyBonus|abilities|saves|skills|conditions|deathSaves|resources|features|spells|inventory|proficiencies)(\.|$)/.test(path);if(rtc.role==='player'&&(!state.campaign.permissions.playersEditOwnCharacter||!playerEditableCharacterPath(path)))return toast('Character stats are controlled by the host');if(mechanical&&(c.mechanicsState==='locked'||state.campaign.mechanicsLockedAt)){if(rtc.role==='player')return toast('Mechanical corrections require the host');const reason=prompt('Reason for this host mechanics correction:');if(!reason?.trim()){renderCharacter();return}const oldValue=path.split('.').reduce((value,key)=>value?.[key],c);setCharacterPath(c,path,value);const correction={eventId:uid('mechanics'),eventType:'host_mechanics_correction',at:nowISO(),sourceRule:'lantern:host-correction',actorId:state.localPlayer.id,targetIds:[c.entityId||c.id],intent:{kind:'host_correction',path,reason:reason.trim()},outcome:{before:oldValue,after:value},mutations:[{entityId:c.entityId||c.id,field:path,value}]};state.mechanicalEvents.push(correction);addEvent('host_mechanics_correction',`${c.name}: ${path} corrected by host`,{actor:state.localPlayer.name,entityId:c.entityId,details:{eventId:correction.eventId,path,reason:reason.trim()}})}else{setCharacterPath(c,path,value);if(mechanical)c.mechanicsState='initialized'}save({broadcast:rtc.role!=='player'});render()}
 function editCharacterList(path,val){editCharacterPath(path,val.split('\n').map(x=>x.trim()).filter(Boolean))}
 function rollAbility(key,label){const c=currentCharacter();submitCombatIntent({kind:'ability_check',ability:key,skill:null,dc:null,openRoll:true,sourceRule:'srd5.1:ability-check',reason:`Unopposed ${label} die`},c.id)}
+// Scratch characters keep their own completely optional fields, separate from 5e mechanics.
+const SCRATCH_GROUPS=[['stats','Custom stats'],['resources','Resources'],['powers','Powers'],['equipment','Equipment'],['progression','Progression']];
+function renderScratchCharacter(){
+  const view=$('view-character'),layout=view?.querySelector('.character-layout');
+  if(!view||!layout)return;
+  view.querySelector('#scratch-character-builder')?.remove();
+  const scratch=getCharacterMode()==='scratch';
+  layout.hidden=scratch;
+  if(!scratch)return;
+  const c=currentCharacter();
+  const canEdit=rtc.role!=='player'&&canHostEdit();
+  const build=c.customBuild&&typeof c.customBuild==='object'?c.customBuild:{};
+  if(!build.groups||typeof build.groups!=='object')build.groups={};
+  c.customBuild=build;
+  const root=document.createElement('article');root.id='scratch-character-builder';root.className='scratch-builder panel-card';
+  const header=document.createElement('header');header.className='scratch-builder-header';
+  const intro=document.createElement('div');
+  const eyebrow=document.createElement('span');eyebrow.className='eyebrow';eyebrow.textContent='Homebrew · From Scratch';
+  const title=document.createElement('h2');title.textContent='Create your own character';
+  const blurb=document.createElement('p');blurb.textContent='A blank canvas. No mandatory ability scores, 5e rules, classes, or levels. Add only what your character needs.';
+  intro.append(eyebrow,title,blurb);
+  const change=document.createElement('button');change.type='button';change.className='button compact';change.textContent='Change creation path';change.onclick=openCharacterPathChooser;
+  header.append(intro,change);root.append(header);
+  if(!canEdit){const note=document.createElement('p');note.className='small-note';note.textContent='Custom character editing is host-only in this first version. You can still view the build.';root.append(note)}
+  const identity=document.createElement('section');identity.className='scratch-builder-identity';
+  identity.innerHTML='<h3>Identity</h3><div class="form-grid two"><label>Character name<input data-scratch-field="name" placeholder="Give your creation a name"></label><label>Species or concept (optional)<input data-scratch-field="concept" placeholder="Whatever you imagine"></label></div><label>Story and appearance (optional)<textarea data-scratch-field="story" rows="3" placeholder="Who are they?"></textarea></label>';
+  root.append(identity);
+  for(const input of identity.querySelectorAll('[data-scratch-field]')){
+    input.value=String(build[input.dataset.scratchField]??'');
+    input.disabled=!canEdit;
+    input.addEventListener('change',()=>{if(!canEdit)return;build[input.dataset.scratchField]=input.value;save()});
+  }
+  for(const [key,title] of SCRATCH_GROUPS){
+    const section=document.createElement('section');section.className='scratch-builder-group';
+    const heading=document.createElement('div');heading.className='scratch-builder-group-heading';
+    const h=document.createElement('h3');h.textContent=title;
+    const add=document.createElement('button');add.type='button';add.className='button compact';add.textContent='+ Add '+title.toLowerCase().replace(/s$/,'');
+    add.disabled=!canEdit;
+    add.onclick=()=>{const rows=Array.isArray(build.groups[key])?build.groups[key]:[];build.groups[key]=[...rows,{name:'',details:''}];save();renderScratchCharacter()};
+    heading.append(h,add);section.append(heading);
+    const entries=Array.isArray(build.groups[key])?build.groups[key]:[];
+    if(!entries.length){const empty=document.createElement('p');empty.className='scratch-builder-empty';empty.textContent='Nothing here yet. Add your first entry whenever you want.';section.append(empty)}
+    entries.forEach((entry,index)=>{
+      const card=document.createElement('div');card.className='scratch-builder-entry';
+      const fields=document.createElement('div');fields.className='form-grid two';
+      const nameLabel=document.createElement('label');nameLabel.textContent='Name';
+      const name=document.createElement('input');name.placeholder='Your own name';name.value=String(entry?.name??'');name.disabled=!canEdit;
+      const detailLabel=document.createElement('label');detailLabel.textContent='Rules, value, or description';
+      const details=document.createElement('textarea');details.rows=2;details.placeholder='Define it however you like';details.value=String(entry?.details??'');details.disabled=!canEdit;
+      name.addEventListener('change',()=>{if(!canEdit)return;entry.name=name.value;save()});
+      details.addEventListener('change',()=>{if(!canEdit)return;entry.details=details.value;save()});
+      nameLabel.append(name);detailLabel.append(details);fields.append(nameLabel,detailLabel);
+      const remove=document.createElement('button');remove.type='button';remove.className='button compact';remove.textContent='Remove';remove.disabled=!canEdit;
+      remove.onclick=()=>{if(!confirm('Remove this '+title.toLowerCase()+' entry?'))return;build.groups[key].splice(index,1);save();renderScratchCharacter()};
+      card.append(fields,remove);section.append(card);
+    });
+    root.append(section);
+  }
+  layout.after(root);
+}
 function renderCharacterFull(){
   const c=currentCharacter();Object.assign(c,normalizeCharacter(c));const hp=Math.max(0,Number(c.hp)||0),maxHp=Math.max(1,Number(c.maxHp)||1),hpPercent=Math.min(100,Math.round(hp/maxHp*100));
   const abilities=[['str','Strength'],['dex','Dexterity'],['con','Constitution'],['int','Intelligence'],['wis','Wisdom'],['cha','Charisma']];
@@ -1550,7 +1610,7 @@ function renderCharacterFull(){
   if(rtc.role==='player'){const homebrewHint=$('.homebrew-section .sheet-section-heading small');if(homebrewHint)homebrewHint.textContent='Host-controlled custom rules'}
   const lockNotice=document.createElement('p');lockNotice.className='muted character-lock-notice';lockNotice.textContent=rtc.role==='player'?(state.campaign.permissions.playersEditOwnCharacter?'You can propose changes across your character sheet. The host and DM must approve them.':'The host has disabled character change requests.'):(state.campaign.dmPlayerId===state.localPlayer.id?'Your character changes take effect directly because you are the DM.':'Your character changes wait for DM approval.');$('characterForm').prepend(lockNotice);
   $$('[data-char-path],[data-char-list]').forEach(x=>{const path=x.dataset.charPath||x.dataset.charList;x.disabled=rtc.role==='player'&&(!state.campaign.permissions.playersEditOwnCharacter||!playerEditableCharacterPath(path))});
-  $$('[data-char-path]').forEach(x=>x.onchange=()=>editCharacterPath(x.dataset.charPath,x.type==='checkbox'?x.checked:x.value,x.dataset.charType||'text'));$$('[data-char-list]').forEach(x=>x.onchange=()=>editCharacterList(x.dataset.charList,x.value));$$('[data-roll-ability]').forEach(x=>x.onclick=()=>rollAbility(x.dataset.rollAbility,x.dataset.rollLabel));mountCharacterSheetTabs();enhanceHomebrewWorkshop();const portrait=getAssetUrl(c.portraitAssetId);$('portraitSlot').classList.toggle('has-image',!!portrait);$('portraitSlot').style.backgroundImage=portrait?`url("${portrait}")`:'';$('partyList').innerHTML=state.characters.map(ch=>`<div class="party-member"><div class="avatar">${esc(ch.name[0]||'?')}</div><div class="meta"><b>${esc(ch.name)}</b><small>${esc(ch.class)} · Lv ${ch.level} · ${esc(ch.location||state.scene.location)}</small></div><span>${ch.hp}/${ch.maxHp} HP</span></div>`).join('')}
+  $$('[data-char-path]').forEach(x=>x.onchange=()=>editCharacterPath(x.dataset.charPath,x.type==='checkbox'?x.checked:x.value,x.dataset.charType||'text'));$$('[data-char-list]').forEach(x=>x.onchange=()=>editCharacterList(x.dataset.charList,x.value));$$('[data-roll-ability]').forEach(x=>x.onclick=()=>rollAbility(x.dataset.rollAbility,x.dataset.rollLabel));mountCharacterSheetTabs();enhanceHomebrewWorkshop();renderScratchCharacter();const portrait=getAssetUrl(c.portraitAssetId);$('portraitSlot').classList.toggle('has-image',!!portrait);$('portraitSlot').style.backgroundImage=portrait?`url("${portrait}")`:'';$('partyList').innerHTML=state.characters.map(ch=>`<div class="party-member"><div class="avatar">${esc(ch.name[0]||'?')}</div><div class="meta"><b>${esc(ch.name)}</b><small>${esc(ch.class)} · Lv ${ch.level} · ${esc(ch.location||state.scene.location)}</small></div><span>${ch.hp}/${ch.maxHp} HP</span></div>`).join('')}
 renderCharacter=renderCharacterFull;
 
 // Startup ------------------------------------------------------------------------
