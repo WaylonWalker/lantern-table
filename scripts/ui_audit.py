@@ -25,7 +25,7 @@ from urllib.parse import urlsplit, urlunsplit, parse_qsl, urlencode
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT_DIR = Path(os.environ.get("UI_AUDIT_OUTPUT_DIR", ROOT / "artifacts" / "ui-audit")).expanduser().resolve()
-DEFAULT_URL = "http://127.0.0.1:8766/"
+DEFAULT_URL = "http://127.0.0.1:8768/"
 PROD_URL = "https://dnd.waylonwalker.com/"
 TIMEOUT_MS = int(os.environ.get("UI_AUDIT_TIMEOUT_MS", "20000"))
 SENSITIVE = re.compile(r"(?i)(authorization|cookie|token|secret|password|api[_-]?key|session|credential)")
@@ -168,7 +168,7 @@ def main() -> int:
                 raise RuntimeError(f"Configured server is not healthy: {safe_url(base_url)}")
             # Use the conventional port unless it is already occupied by an unhealthy server.
             parts = urlsplit(base_url)
-            port = parts.port or 8766
+            port = parts.port or 8768
             with socket.socket() as probe:
                 port_available = probe.connect_ex((parts.hostname or "127.0.0.1", port)) != 0
             if not port_available:

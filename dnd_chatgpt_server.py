@@ -16,7 +16,7 @@
 Run:
     chmod +x dnd_chatgpt_server.py
     ./dnd_chatgpt_server.py
-Then open http://127.0.0.1:8766
+Then open http://127.0.0.1:8768
 
 Campaign state, drawings, and attached image bytes remain in the browser. The local Bridge
 stores ChatGPT OAuth credentials and a non-sensitive benchmark cache under ~/.config/lantern-table
@@ -62,7 +62,7 @@ from jwt import PyJWKClient
 HOST = "127.0.0.1"  # OAuth loopback host required by the current open-source ChatGPT sign-in flow.
 MODE = os.environ.get("LANTERN_MODE", "companion").lower()  # companion or public
 BIND_HOST = os.environ.get("LANTERN_BIND", "0.0.0.0" if MODE == "public" else HOST)
-PORT = int(os.environ.get("LANTERN_PORT", "8766"))
+PORT = int(os.environ.get("LANTERN_PORT", "8768"))
 APP_NAME = "Lantern Table"
 BRIDGE_NAME = "Lantern Bridge"
 RESOURCE = "https://api.openai.com/v1"
@@ -932,7 +932,7 @@ async def api_config():
     return {
         "mode": MODE,
         "public_origin": os.environ.get("LANTERN_PUBLIC_ORIGIN", "https://dnd.waylonwalker.com"),
-        "companion_origin": os.environ.get("LANTERN_COMPANION_ORIGIN", "http://127.0.0.1:8766"),
+        "companion_origin": os.environ.get("LANTERN_COMPANION_ORIGIN", "http://127.0.0.1:8768"),
         "signaling": MODE == "public",
         "signaling_healthy": (redis_ok if REDIS_URL else True),
         "multi_replica": bool(REDIS_URL and redis_ok),
