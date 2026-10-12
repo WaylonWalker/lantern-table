@@ -730,7 +730,65 @@ async function unloadOllamaModel(){if(!session.model)return;try{const response=a
 async function benchmarkLocalModel(){if(!session.model)return;const button=$('benchmarkModel');if(button){button.disabled=true;button.textContent='Benchmarking…'}try{const response=await fetch(`${AI_BASE}/api/benchmark`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({provider:'ollama',model:session.model})});const result=await response.json();if(!response.ok)throw Error(result.detail||'Benchmark failed');session.benchmarks[session.model]=result;session.localModels=session.localModels.map(m=>m.slug===session.model?{...m,measurement:'Measured',benchmark:result}:m);const plans=await getJSON('/api/profiles',AI_BASE);session.profiles=plans.available?plans:null;renderAI()}catch(error){toast(`Benchmark failed: ${error.message}`)}finally{if(button)button.disabled=false}}
 function renderMultiplayer(){const p=$('multiplayerPanel');if(!appConfig.signaling){p.innerHTML='<p class="muted">Multiplayer signaling is available on the deployed public app.</p>';return}const code=state.campaign.joinCode;p.innerHTML=`<div class="room-code">${esc(code)}</div><p class="muted">The code only works while the host is online. Campaign data stays on participant devices.</p><div class="button-row"><button id="hostTable" class="button primary">${rtc.role==='host'?'Hosting now':'Host this campaign'}</button><button id="joinTable" class="button">Join a friend</button><button id="leaveTable" class="button ghost ${rtc.role==='solo'?'hidden':''}">Leave</button></div><div class="small-note">${appConfig.signaling_healthy===false?'Signaling backend is starting/unavailable.':appConfig.multi_replica?'Signaling is multi-replica via ephemeral Valkey.':'Single signaling replica mode.'}</div>`;$('hostTable')?.addEventListener('click',()=>rtc.startHost(code));$('joinTable')?.addEventListener('click',()=>openJoinPrompt());$('leaveTable')?.addEventListener('click',()=>rtc.leave())}
 
-function showView(v){$$('.view').forEach(e=>e.classList.toggle('active',e.id===`view-${v}`));$$('[data-view]').forEach(e=>e.classList.toggle('active',e.dataset.view===v));if(v==='map')resizeDrawCanvas();if(v==='campaign')persistRoute(state.campaign.id);else if(v==='session-history')renderHistoricalSession();else if(historicalSessionId){historicalSessionId='';persistRoute(state.campaign.id)}}
+// Character creation mode is a device preference, not authoritative game state.
+function characterModeKey(){
+  const character=currentCharacter();
+  return 'lantern:character-path:v1:'+encodeURIComponent(state.campaign?.id||'local')+':'+encodeURIComponent(character?.id||'unknown');
+}
+function getCharacterMode(){try{return localStorage.getItem(characterModeKey())||''}catch{return ''}}
+function setCharacterMode(mode){try{localStorage.setItem(characterModeKey(),mode)}catch{}}
+function openCharacterPathChooser(){
+  const existing=document.getElementById('character-path-dialog');if(existing)existing.remove();
+  const overlay=document.createElement('div');overlay.id='character-path-dialog';overlay.className='character-path-overlay';
+  overlay.innerHTML='<section class="character-path-card" role="dialog" aria-modal="true" aria-labelledby="character-path-title"><span class="eyebrow">Lantern Table · Character Builder</span><h2 id="character-path-title">Choose your path</h2><p>How do you want to build this character? You can change this later without deleting your character.</p><div class="character-path-choices"><button type="button" data-character-path="5e"><strong>⚔ Classic 5e</strong><span>Use familiar D&D 5e abilities and character options.</span></button><button type="button" data-character-path="homebrew"><strong>✨ Homebrew</strong><span>Customize 5e or invent something completely new.</span></button></div><div class="character-path-step" hidden><h3>How will you homebrew?</h3><div class="character-path-choices"><button type="button" data-character-path="modify"><strong>Modify 5e</strong><span>Start with 5e and make it your own.</span></button><button type="button" data-character-path="scratch"><strong>Create From Scratch</strong><span>Begin with a blank idea and define your own abilities.</span></button></div><button class="button ghost character-path-back" type="button">← Back</button></div></section>';
+  document.body.append(overlay);
+  const first=overlay.querySelector('.character-path-choices'),second=overlay.querySelector('.character-path-step');
+  const finish=mode=>{setCharacterMode(mode);overlay.remove();if(mode!=='5e'){characterSheetTab='homebrew';renderCharacter()}else{characterSheetTab='overview';renderCharacter()}};
+  overlay.querySelector('[data-character-path="5e"]').onclick=()=>finish('5e');
+  overlay.querySelector('[data-character-path="homebrew"]').onclick=()=>{first.hidden=true;second.hidden=false;overlay.querySelector('[data-character-path="modify"]').focus()};
+  overlay.querySelector('[data-character-path="modify"]').onclick=()=>finish('modify');
+  overlay.querySelector('[data-character-path="scratch"]').onclick=()=>finish('scratch');
+  overlay.querySelector('.character-path-back').onclick=()=>{second.hidden=true;first.hidden=false;overlay.querySelector('[data-character-path="5e"]').focus()};
+  overlay.addEventListener('keydown',event=>{if(event.key==='Tab'){const focusable=[...overlay.querySelectorAll('button')].filter(el=>el.getClientRects().length);const firstButton=focusable[0],lastButton=focusable.at(-1);if(event.shiftKey&&document.activeElement===firstButton){event.preventDefault();lastButton.focus()}else if(!event.shiftKey&&document.activeElement===lastButton){event.preventDefault();firstButton.focus()}}});
+  overlay.querySelector('[data-character-path="5e"]').focus();
+}
+function maybeChooseCharacterPath(){
+  if(!$('view-character')?.classList.contains('active'))return;
+  if(!getCharacterMode())openCharacterPathChooser();
+}
+function enhanceHomebrewWorkshop(){
+  const panel=$('character-panel-homebrew'),section=panel?.querySelector('.homebrew-section');
+  if(!section)return;
+  const mode=getCharacterMode(),modeLabel=mode==='modify'?'Modify 5e':mode==='scratch'?'Create From Scratch':'Classic 5e';
+  const header=document.createElement('div');header.className='homebrew-workshop-intro';
+  header.innerHTML='<div><span class="eyebrow">Homebrew Workshop</span><h3>Make your own legend</h3><p>Build original species, classes, spells, items, and abilities using the existing character fields. The game engine does not automatically execute custom rules yet.</p></div>';
+  const modeButton=document.createElement('button');modeButton.type='button';modeButton.className='button compact';modeButton.textContent='Path: '+modeLabel+' · Change';
+  modeButton.onclick=openCharacterPathChooser;header.append(modeButton);
+  section.prepend(header);
+  const categories=[['species','Species','Create a new ancestry, physiology, and traits.'],['class','Class','Define an original role and how it advances.'],['spell','Spell','Describe magical effects, costs, and limits.'],['item','Item','Invent equipment, artifacts, and weapons.'],['ability','Ability','Create unique powers, triggers, and consequences.']];
+  const chooser=document.createElement('div');chooser.className='homebrew-workshop-types';
+  const label=document.createElement('h4');label.textContent='Start with a creation type';chooser.append(label);
+  const grid=document.createElement('div');grid.className='homebrew-workshop-grid';
+  for(const [key,title,description] of categories){
+    const button=document.createElement('button');button.type='button';
+    button.innerHTML='<strong>'+title+'</strong><small>'+description+'</small>';
+    button.onclick=()=>{
+      const name=section.querySelector('[data-char-path="homebrew.name"]');
+      const details=section.querySelector('[data-char-path="homebrew.description"]');
+      if(!name||!details)return;
+      if((name.value.trim()||details.value.trim())&&!confirm('Replace the current homebrew name and description? Your traits, abilities, and notes will stay unchanged.'))return;
+      name.value='New '+title;name.dispatchEvent(new Event('change',{bubbles:true}));
+      // The change handler re-renders the sheet; reacquire the input.
+      const newDetails=$('characterForm').querySelector('[data-char-path="homebrew.description"]');
+      if(newDetails){newDetails.value='Type: '+title+'\\nConcept: \\nMechanics: \\nLimitations: ';newDetails.dispatchEvent(new Event('change',{bubbles:true}))}
+      characterSheetTab='homebrew';
+      $('characterForm').querySelector('[data-char-path="homebrew.name"]')?.focus();
+    };
+    grid.append(button);
+  }
+  chooser.append(grid);section.insertBefore(chooser,section.querySelector('.form-grid'));
+}
+function showView(v){$('.view').forEach(e=>e.classList.toggle('active',e.id===`view-${v}`));$$('[data-view]').forEach(e=>e.classList.toggle('active',e.dataset.view===v));if(v==='map')resizeDrawCanvas();if(v==='character')maybeChooseCharacterPath();if(v==='campaign')persistRoute(state.campaign.id);else if(v==='session-history')renderHistoricalSession();else if(historicalSessionId){historicalSessionId='';persistRoute(state.campaign.id)}}
 $$('[data-view]').forEach(e=>e.onclick=()=>showView(e.dataset.view));
 $('navigatorNewCampaign').onclick=createNewCampaign;
 $('navigatorJoinCampaign').onclick=()=>openJoinPrompt();
@@ -1492,7 +1550,7 @@ function renderCharacterFull(){
   if(rtc.role==='player'){const homebrewHint=$('.homebrew-section .sheet-section-heading small');if(homebrewHint)homebrewHint.textContent='Host-controlled custom rules'}
   const lockNotice=document.createElement('p');lockNotice.className='muted character-lock-notice';lockNotice.textContent=rtc.role==='player'?(state.campaign.permissions.playersEditOwnCharacter?'You can propose changes across your character sheet. The host and DM must approve them.':'The host has disabled character change requests.'):(state.campaign.dmPlayerId===state.localPlayer.id?'Your character changes take effect directly because you are the DM.':'Your character changes wait for DM approval.');$('characterForm').prepend(lockNotice);
   $$('[data-char-path],[data-char-list]').forEach(x=>{const path=x.dataset.charPath||x.dataset.charList;x.disabled=rtc.role==='player'&&(!state.campaign.permissions.playersEditOwnCharacter||!playerEditableCharacterPath(path))});
-  $$('[data-char-path]').forEach(x=>x.onchange=()=>editCharacterPath(x.dataset.charPath,x.type==='checkbox'?x.checked:x.value,x.dataset.charType||'text'));$$('[data-char-list]').forEach(x=>x.onchange=()=>editCharacterList(x.dataset.charList,x.value));$$('[data-roll-ability]').forEach(x=>x.onclick=()=>rollAbility(x.dataset.rollAbility,x.dataset.rollLabel));mountCharacterSheetTabs();const portrait=getAssetUrl(c.portraitAssetId);$('portraitSlot').classList.toggle('has-image',!!portrait);$('portraitSlot').style.backgroundImage=portrait?`url("${portrait}")`:'';$('partyList').innerHTML=state.characters.map(ch=>`<div class="party-member"><div class="avatar">${esc(ch.name[0]||'?')}</div><div class="meta"><b>${esc(ch.name)}</b><small>${esc(ch.class)} · Lv ${ch.level} · ${esc(ch.location||state.scene.location)}</small></div><span>${ch.hp}/${ch.maxHp} HP</span></div>`).join('')}
+  $$('[data-char-path]').forEach(x=>x.onchange=()=>editCharacterPath(x.dataset.charPath,x.type==='checkbox'?x.checked:x.value,x.dataset.charType||'text'));$$('[data-char-list]').forEach(x=>x.onchange=()=>editCharacterList(x.dataset.charList,x.value));$$('[data-roll-ability]').forEach(x=>x.onclick=()=>rollAbility(x.dataset.rollAbility,x.dataset.rollLabel));mountCharacterSheetTabs();enhanceHomebrewWorkshop();const portrait=getAssetUrl(c.portraitAssetId);$('portraitSlot').classList.toggle('has-image',!!portrait);$('portraitSlot').style.backgroundImage=portrait?`url("${portrait}")`:'';$('partyList').innerHTML=state.characters.map(ch=>`<div class="party-member"><div class="avatar">${esc(ch.name[0]||'?')}</div><div class="meta"><b>${esc(ch.name)}</b><small>${esc(ch.class)} · Lv ${ch.level} · ${esc(ch.location||state.scene.location)}</small></div><span>${ch.hp}/${ch.maxHp} HP</span></div>`).join('')}
 renderCharacter=renderCharacterFull;
 
 // Startup ------------------------------------------------------------------------
