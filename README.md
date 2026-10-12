@@ -200,6 +200,16 @@ The manifests never create or copy `cluster-regcred`; they only reference the ex
 
 ## Build and deploy
 
+### Character UI review bundle
+
+Generate a self-contained source and browser audit ZIP with:
+
+```bash
+just ui-audit
+```
+
+The recipe starts `just serve` only when no local app is already healthy, uses an isolated browser profile, captures desktop and mobile character journeys, scans included source and staged text for common secrets, and writes the ZIP under `artifacts/ui-audit/`. The absolute ZIP path is printed at completion. Set `UI_AUDIT_BASE_URL` to capture an already-running local server; that server is left running. `just ui-audit-prod` captures the public site using navigation only. `just ui-audit-compare` compares the two newest ZIP manifests. Playwright downloads Chromium automatically when no system or cached browser is available. Set `UI_AUDIT_OUTPUT_DIR` to change the output folder, `UI_AUDIT_EXCLUDE` to add comma-separated file or directory exclusions, and `UI_AUDIT_MAX_SOURCE_BYTES` to change the first-party source file size limit.
+
 Build + push an immutable tag:
 
 ```bash
