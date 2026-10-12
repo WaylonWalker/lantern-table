@@ -170,14 +170,18 @@ textarea.scratch-block-content{resize:vertical;min-height:95px}
 .scratch-block-add select{width:auto;flex:1 1 170px}
 @media(max-width:600px){.scratch-block-toolbar button{flex:1 1 auto}.scratch-block-add button{flex:1 1 100%}}
 
-/* Dark freeform character canvas, with Excalidraw-inspired floating controls. */
-.scratch-builder{max-width:none;padding:16px;gap:14px;background:#11151e}
-.character-canvas-mount{position:relative}
-.character-canvas-toolbar{position:relative;z-index:2;display:flex;flex-wrap:wrap;justify-content:center;gap:5px;padding:9px;border:1px solid #354052;border-radius:13px 13px 0 0;background:#202632}
-.character-canvas-toolbar .button{font-size:12px;padding:8px 11px}
-.character-canvas-toolbar .button.active{border-color:#e6b450;color:#e6b450;background:#e6b45019}
-.character-canvas-board{height:min(76vh,850px);min-height:470px;overflow:hidden;touch-action:none;border:1px solid #354052;border-top:0;border-radius:0 0 15px 15px;background-color:#151923;background-image:radial-gradient(#3b4555 0.75px,transparent .75px);background-size:22px 22px}
-.character-canvas-svg{display:block;width:100%;height:100%;touch-action:none;cursor:crosshair}
-.character-canvas-svg .selected>*{filter:drop-shadow(0 0 5px #e6b450aa)}
-.scratch-builder-header{padding:8px 8px 16px}
-@media(max-width:600px){.scratch-builder{padding:10px}.character-canvas-board{height:65vh;min-height:450px}.character-canvas-toolbar{justify-content:flex-start}}
+
+/* Practical homebrew sheet: no drawing canvas or visual programming dependencies. */
+.scratch-builder{max-width:1100px;margin:0 auto;display:grid;gap:18px;padding:18px}
+.scratch-practical-section{display:grid;gap:12px;padding:18px;border:1px solid var(--line);border-radius:14px;background:var(--surface2)}
+.scratch-practical-section h3{margin:0;font-size:20px}
+.scratch-practical-section-head,.scratch-practical-actions{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.scratch-practical-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.scratch-practical-field{display:grid;gap:6px;min-width:0}
+.scratch-practical-field span{font-size:13px;font-weight:600;color:var(--muted)}
+.scratch-practical-field input,.scratch-practical-field textarea{width:100%;max-width:100%}
+.scratch-practical-field textarea{resize:vertical;min-height:86px}
+.scratch-practical-entry{display:grid;gap:12px;padding:13px;border:1px solid var(--line);border-radius:12px;background:var(--surface)}
+.scratch-practical-actions{justify-content:flex-end}
+.scratch-practical-empty{color:var(--muted);margin:0;font-size:13px}
+@media(max-width:620px){.scratch-practical-grid{grid-template-columns:1fr}.scratch-builder{padding:10px}.scratch-practical-section{padding:13px}}
