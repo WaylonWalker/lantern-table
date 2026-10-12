@@ -788,7 +788,7 @@ function enhanceHomebrewWorkshop(){
   }
   chooser.append(grid);section.insertBefore(chooser,section.querySelector('.form-grid'));
 }
-function showView(v){$('.view').forEach(e=>e.classList.toggle('active',e.id===`view-${v}`));$$('[data-view]').forEach(e=>e.classList.toggle('active',e.dataset.view===v));if(v==='map')resizeDrawCanvas();if(v==='character')maybeChooseCharacterPath();if(v==='campaign')persistRoute(state.campaign.id);else if(v==='session-history')renderHistoricalSession();else if(historicalSessionId){historicalSessionId='';persistRoute(state.campaign.id)}}
+function showView(v){$$('.view').forEach(e=>e.classList.toggle('active',e.id===`view-${v}`));$$('[data-view]').forEach(e=>e.classList.toggle('active',e.dataset.view===v));if(v==='map')resizeDrawCanvas();if(v==='character')maybeChooseCharacterPath();if(v==='campaign')persistRoute(state.campaign.id);else if(v==='session-history')renderHistoricalSession();else if(historicalSessionId){historicalSessionId='';persistRoute(state.campaign.id)}}
 $$('[data-view]').forEach(e=>e.onclick=()=>showView(e.dataset.view));
 $('navigatorNewCampaign').onclick=createNewCampaign;
 $('navigatorJoinCampaign').onclick=()=>openJoinPrompt();
