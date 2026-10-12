@@ -589,41 +589,48 @@ let characterSheetTab='overview';
 function mountCharacterSheetTabs(){
   const form=$('characterForm');
   if(!form)return;
-  const existing=[...form.querySelectorAll(':scope > .field-section')];
-  if(existing.length!==3)return;
+  const sections=[...form.children].filter(element=>element.classList.contains('sheet-section')||element.classList.contains('sheet-columns'));
+  if(sections.length!==6)return;
   const labels=[['overview','Overview'],['stats','Stats'],['inventory','Inventory'],['spells','Spells'],['homebrew','Homebrew'],['notes','Notes']];
   const nav=document.createElement('nav');
-  nav.className='character-sheet-tabs';
-  nav.setAttribute('aria-label','Character sheet sections');
+  nav.className='character-sheet-tabs';nav.setAttribute('aria-label','Character sheet sections');
+  nav.setAttribute('role','tablist');
   const panels=new Map();
   for(const [key,label] of labels){
     const button=document.createElement('button');
     button.type='button';button.textContent=label;button.dataset.characterTab=key;
-    button.setAttribute('role','tab');button.setAttribute('aria-controls','character-panel-'+key);
+    button.setAttribute('role','tab');button.id='character-tab-'+key;
+    button.setAttribute('aria-controls','character-panel-'+key);
     button.onclick=()=>{characterSheetTab=key;selectTab()};
+    button.addEventListener('keydown',event=>{
+      if(!['ArrowLeft','ArrowRight','Home','End'].includes(event.key))return;
+      event.preventDefault();
+      const current=labels.findIndex(([name])=>name===characterSheetTab);
+      const next=event.key==='Home'?0:event.key==='End'?labels.length-1:(current+(event.key==='ArrowRight'?1:-1)+labels.length)%labels.length;
+      characterSheetTab=labels[next][0];selectTab();nav.querySelectorAll('button')[next].focus();
+    });
     nav.append(button);
     const panel=document.createElement('section');
     panel.id='character-panel-'+key;panel.className='character-tab-panel';
-    panel.setAttribute('role','tabpanel');panel.setAttribute('aria-label',label);
-    if(['inventory','spells','homebrew'].includes(key)){
-      panel.classList.add('character-tab-coming');
-      const heading=document.createElement('h3');heading.textContent=label;
-      const note=document.createElement('p');note.textContent='This section is coming in a future update. No character data has been changed.';
-      panel.append(heading,note);
-    }
+    panel.setAttribute('role','tabpanel');panel.setAttribute('aria-labelledby',button.id);
     panels.set(key,panel);
   }
-  panels.get('overview').append(existing[0]);
-  panels.get('stats').append(existing[1]);
-  panels.get('notes').append(existing[2]);
-  form.prepend(nav);
+  panels.get('overview').append(sections[0]);
+  panels.get('stats').append(sections[1],sections[2]);
+  const columns=sections[3];
+  const halves=[...columns.children];
+  if(halves.length===2){panels.get('inventory').append(halves[0]);panels.get('spells').append(halves[1]);columns.remove()}
+  else panels.get('inventory').append(columns);
+  panels.get('homebrew').append(sections[4]);
+  panels.get('notes').append(sections[5]);
+  const voice=form.querySelector('.character-voice');
+  if(voice)panels.get('overview').append(voice);
+  form.insertBefore(nav,form.querySelector('.character-lock-notice')?.nextSibling||form.firstChild);
   for(const panel of panels.values())form.append(panel);
   function selectTab(){
     for(const button of nav.querySelectorAll('button')){
       const active=button.dataset.characterTab===characterSheetTab;
-      button.classList.toggle('active',active);
-      button.setAttribute('aria-selected',String(active));
-      button.tabIndex=active?0:-1;
+      button.classList.toggle('active',active);button.setAttribute('aria-selected',String(active));button.tabIndex=active?0:-1;
     }
     for(const [key,panel] of panels)panel.hidden=key!==characterSheetTab;
   }
@@ -1485,7 +1492,7 @@ function renderCharacterFull(){
   if(rtc.role==='player'){const homebrewHint=$('.homebrew-section .sheet-section-heading small');if(homebrewHint)homebrewHint.textContent='Host-controlled custom rules'}
   const lockNotice=document.createElement('p');lockNotice.className='muted character-lock-notice';lockNotice.textContent=rtc.role==='player'?(state.campaign.permissions.playersEditOwnCharacter?'You can propose changes across your character sheet. The host and DM must approve them.':'The host has disabled character change requests.'):(state.campaign.dmPlayerId===state.localPlayer.id?'Your character changes take effect directly because you are the DM.':'Your character changes wait for DM approval.');$('characterForm').prepend(lockNotice);
   $$('[data-char-path],[data-char-list]').forEach(x=>{const path=x.dataset.charPath||x.dataset.charList;x.disabled=rtc.role==='player'&&(!state.campaign.permissions.playersEditOwnCharacter||!playerEditableCharacterPath(path))});
-  $$('[data-char-path]').forEach(x=>x.onchange=()=>editCharacterPath(x.dataset.charPath,x.type==='checkbox'?x.checked:x.value,x.dataset.charType||'text'));$$('[data-char-list]').forEach(x=>x.onchange=()=>editCharacterList(x.dataset.charList,x.value));$$('[data-roll-ability]').forEach(x=>x.onclick=()=>rollAbility(x.dataset.rollAbility,x.dataset.rollLabel));const portrait=getAssetUrl(c.portraitAssetId);$('portraitSlot').classList.toggle('has-image',!!portrait);$('portraitSlot').style.backgroundImage=portrait?`url("${portrait}")`:'';$('partyList').innerHTML=state.characters.map(ch=>`<div class="party-member"><div class="avatar">${esc(ch.name[0]||'?')}</div><div class="meta"><b>${esc(ch.name)}</b><small>${esc(ch.class)} · Lv ${ch.level} · ${esc(ch.location||state.scene.location)}</small></div><span>${ch.hp}/${ch.maxHp} HP</span></div>`).join('')}
+  $$('[data-char-path]').forEach(x=>x.onchange=()=>editCharacterPath(x.dataset.charPath,x.type==='checkbox'?x.checked:x.value,x.dataset.charType||'text'));$$('[data-char-list]').forEach(x=>x.onchange=()=>editCharacterList(x.dataset.charList,x.value));$$('[data-roll-ability]').forEach(x=>x.onclick=()=>rollAbility(x.dataset.rollAbility,x.dataset.rollLabel));mountCharacterSheetTabs();const portrait=getAssetUrl(c.portraitAssetId);$('portraitSlot').classList.toggle('has-image',!!portrait);$('portraitSlot').style.backgroundImage=portrait?`url("${portrait}")`:'';$('partyList').innerHTML=state.characters.map(ch=>`<div class="party-member"><div class="avatar">${esc(ch.name[0]||'?')}</div><div class="meta"><b>${esc(ch.name)}</b><small>${esc(ch.class)} · Lv ${ch.level} · ${esc(ch.location||state.scene.location)}</small></div><span>${ch.hp}/${ch.maxHp} HP</span></div>`).join('')}
 renderCharacter=renderCharacterFull;
 
 // Startup ------------------------------------------------------------------------
