@@ -18,9 +18,9 @@ Run:
     ./dnd_chatgpt_server.py
 Then open http://127.0.0.1:8765
 
-Campaign state, drawings, and attached image bytes remain in the browser. In companion mode
-this helper stores only ChatGPT OAuth credentials under ~/.config/lantern-table/chatgpt.json
-(0600 on Unix). Public mode is a disposable signaling/static service and stores no campaign data.
+Campaign state, drawings, and attached image bytes remain in the browser. The local Bridge
+stores ChatGPT OAuth credentials and a non-sensitive benchmark cache under ~/.config/lantern-table
+(0600 files on Unix). Public mode is a disposable signaling/static service and stores no campaign data.
 """
 from __future__ import annotations
 
@@ -31,8 +31,14 @@ import json
 import logging
 import os
 import secrets
+import shutil
+import platform
+import sys
+import subprocess
 import time
 import uuid
+import io
+import wave
 from pathlib import Path
 from typing import Any, AsyncIterator
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
@@ -58,6 +64,7 @@ MODE = os.environ.get("LANTERN_MODE", "companion").lower()  # companion or publi
 BIND_HOST = os.environ.get("LANTERN_BIND", "0.0.0.0" if MODE == "public" else HOST)
 PORT = int(os.environ.get("LANTERN_PORT", "8765"))
 APP_NAME = "Lantern Table"
+BRIDGE_NAME = "Lantern Bridge"
 RESOURCE = "https://api.openai.com/v1"
 AUTH_URL = "https://auth.openai.com/api/accounts/authorize"
 TOKEN_URL = "https://auth.openai.com/api/accounts/oauth/token"
@@ -72,8 +79,214 @@ ASSETS = HERE / "assets"
 CONFIG_DIR = Path.home() / ".config" / "lantern-table"
 CRED_PATH = CONFIG_DIR / "chatgpt.json"
 HOST_PATH = CONFIG_DIR / "host.json"
+OLLAMA_URL = "http://127.0.0.1:11434"
+SD_CPP_URL = os.environ.get("LANTERN_SD_CPP_URL", "http://127.0.0.1:8081").rstrip("/")
+SD_CPP_DEFAULT_URL = "http://127.0.0.1:8080"
+BENCHMARK_PATH = CONFIG_DIR / "benchmarks.json"
+managed_services: dict[str, asyncio.subprocess.Process] = {}
+benchmark_cache: dict[str, dict[str, Any]] = {}
 
-app = FastAPI(title=APP_NAME)
+app = FastAPI(title=BRIDGE_NAME)
+KITTEN_MODEL = "KittenML/kitten-tts-2"
+_kitten_process: asyncio.subprocess.Process | None = None
+_kitten_info: dict[str, Any] = {"available": False, "loaded": False, "state": "disabled", "model": KITTEN_MODEL, "weights": os.environ.get("LANTERN_KITTEN_WEIGHTS", "emb4"), "voices": [], "device": "unknown", "expression_mode": "unknown", "supports_energy_speed": False, "error": None, "last_synthesis_error": None, "load_ms": None, "warmup_ms": None, "warmup_error": None}
+_kitten_start_lock = asyncio.Lock()
+_kitten_io_lock = asyncio.Lock()
+_kitten_cache_dir = CONFIG_DIR / "kitten-audio"
+KITTEN_EMOTIONS = {"angry", "contemplative", "excited", "joyful", "mundane", "nervous", "sad", "stern", "surprised", "tender"}
+KITTEN_EVENTS = {"gasp", "giggle", "growl", "gulp", "laugh", "pause", "scoff", "sigh", "sob", "um"}
+
+def kitten_cuda_oom(error: str) -> bool:
+    message = str(error).lower()
+    return "cuda" in message and ("out of memory" in message or "outofmemoryerror" in message)
+
+def compile_kitten_speech(speech: dict[str, Any]) -> str:
+    """Compile the semantic speech structure at the Kitten adapter boundary."""
+    emotion = speech.get("emotion")
+    output = f"[{emotion}] " if emotion in KITTEN_EMOTIONS else ""
+    parts = speech.get("parts", [])
+    if not isinstance(parts, list):
+        parts = []
+    for part in parts[:80]:
+        if not isinstance(part, dict):
+            continue
+        text = str(part.get("text", ""))[:4000]
+        if part.get("type") == "text":
+            output += text
+        elif part.get("type") == "emphasis":
+            output += f"((({text})))"
+        elif part.get("type") == "event" and part.get("event") in KITTEN_EVENTS:
+            output += f" <{part['event']}>"
+    return output.strip()
+
+def require_local_kitten(request: Request) -> None:
+    if MODE == "public": raise HTTPException(404, "Not found")
+    if request.client and request.client.host not in {"127.0.0.1", "::1", "localhost", "testclient"}:
+        raise HTTPException(403, "Kitten runtime is available only to the local host browser")
+
+async def start_kitten_worker() -> dict[str, Any]:
+    global _kitten_process
+    async with _kitten_start_lock:
+        if _kitten_process and _kitten_process.returncode is None: return _kitten_info
+        _kitten_info.update(available=False, loaded=False, state="starting", error=None)
+        uv = shutil.which("uv")
+        base_command = ([uv, "run", "--quiet", "--with", "kittenml", "--python", "3.12", str(ASSETS / "kitten_worker.py")] if uv else [sys.executable, str(ASSETS / "kitten_worker.py")])
+        base_command.extend(["--weights", str(_kitten_info["weights"])])
+        try:
+            launch_env = os.environ.copy()
+            cpu_retry = False
+            for attempt in range(2):
+                # Synthesis returns a base64 WAV JSON frame that is much larger
+                # than asyncio's default 64 KiB line limit.
+                _kitten_process = await asyncio.create_subprocess_exec(*base_command, stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL, cwd=str(HERE), env=launch_env, limit=64 * 1024 * 1024)
+                raw = await asyncio.wait_for(_kitten_process.stdout.readline(), timeout=3600)
+                ready = json.loads(raw.decode("utf-8")) if raw else {"ready": False, "error": f"Kitten worker exited ({_kitten_process.returncode}) before readiness"}
+                if ready.get("ready"):
+                    break
+                worker_error = str(ready.get("error") or "Kitten worker did not become ready")
+                if attempt == 0 and kitten_cuda_oom(worker_error) and launch_env.get("CUDA_VISIBLE_DEVICES") != "":
+                    # Retry in a fresh process so CUDA is hidden before torch initializes.
+                    cpu_retry = True
+                    await _stop_kitten_process()
+                    launch_env["CUDA_VISIBLE_DEVICES"] = ""
+                    _kitten_info.update(state="starting", error="CUDA is out of memory; retrying KittenTTS 2 on CPU")
+                    logging.getLogger(__name__).warning("KittenTTS 2 CUDA initialization ran out of memory; retrying on CPU")
+                    continue
+                raise RuntimeError(worker_error)
+            if not ready.get("ready"):
+                raise RuntimeError(worker_error)
+            _kitten_info.update(available=True, loaded=True, state="ready", model=ready.get("model", KITTEN_MODEL), weights=ready.get("weights", _kitten_info["weights"]), voices=ready.get("voices", []), device=ready.get("device", "unknown"), expression_mode=ready.get("expression_mode", "inline-markup"), supports_energy_speed=ready.get("supports_energy_speed", False), load_ms=ready.get("load_ms"), warmup_ms=ready.get("warmup_ms"), warmup_error=ready.get("warmup_error"), error=None, last_synthesis_error=None)
+            _kitten_info["cpu_fallback"] = cpu_retry
+            logging.getLogger(__name__).info("KittenTTS 2 ready model=%s weights=%s device=%s voices=%d load_ms=%s", _kitten_info["model"], _kitten_info["weights"], _kitten_info["device"], len(_kitten_info["voices"]), _kitten_info["load_ms"])
+            return _kitten_info
+        except Exception as exc:
+            if _kitten_process and _kitten_process.returncode is None:
+                _kitten_process.terminate()
+                try: await asyncio.wait_for(_kitten_process.wait(), 5)
+                except asyncio.TimeoutError: _kitten_process.kill()
+            _kitten_process = None
+            _kitten_info.update(available=False, loaded=False, state="error", voices=[], error=f"{type(exc).__name__}: {exc}")
+            logging.getLogger(__name__).error("KittenTTS 2 failed to start: %s", _kitten_info["error"])
+            raise HTTPException(503, _kitten_info["error"])
+
+async def _stop_kitten_process() -> None:
+    global _kitten_process
+    process = _kitten_process
+    _kitten_process = None
+    if process and process.returncode is None:
+        process.terminate()
+        try:
+            await asyncio.wait_for(process.wait(), 5)
+        except asyncio.TimeoutError:
+            process.kill()
+            await process.wait()
+
+async def _start_configured_kitten_safely() -> None:
+    try:
+        await start_kitten_worker()
+    except Exception as exc:
+        # Startup is best-effort; retain the failure in diagnostics without leaving
+        # an unobserved asyncio task exception in the companion logs.
+        _kitten_info.update(available=False, loaded=False, state="error", error=str(exc))
+        logging.getLogger(__name__).error("KittenTTS 2 startup unavailable: %s", exc)
+
+async def kitten_worker_request(payload: dict[str, Any]) -> dict[str, Any]:
+    await start_kitten_worker()
+    process = _kitten_process
+    if not process or not process.stdin or not process.stdout: raise HTTPException(503, "Kitten worker is not running")
+    async with _kitten_io_lock:
+        try:
+            process.stdin.write((json.dumps(payload, ensure_ascii=False) + "\n").encode("utf-8")); await process.stdin.drain()
+            raw = await asyncio.wait_for(process.stdout.readline(), timeout=600)
+            result = json.loads(raw.decode("utf-8")) if raw else {"ok": False, "error": "Kitten worker exited without a response"}
+            if not result.get("ok"): raise HTTPException(503, result.get("error", "Kitten synthesis failed"))
+            return result
+        except asyncio.TimeoutError:
+            _kitten_info.update(state="error", error="Kitten synthesis timed out"); raise HTTPException(504, _kitten_info["error"])
+        except (BrokenPipeError, ConnectionError, json.JSONDecodeError) as exc:
+            _kitten_info.update(state="error", error=f"Kitten worker communication failed: {exc}"); raise HTTPException(503, _kitten_info["error"])
+
+@app.on_event("startup")
+async def start_configured_kitten():
+    if MODE != "public" and os.environ.get("LANTERN_KITTEN_ENABLED", "1").lower() not in {"0", "false", "no", "off"}:
+        _kitten_info.update(state="starting")
+        asyncio.create_task(_start_configured_kitten_safely(), name="lantern-kittten-startup")
+
+@app.on_event("shutdown")
+async def stop_kitten_worker():
+    global _kitten_process
+    process = _kitten_process; _kitten_process = None
+    if process and process.returncode is None:
+        process.terminate()
+        try: await asyncio.wait_for(process.wait(), 5)
+        except asyncio.TimeoutError: process.kill()
+
+@app.get("/api/kitten/status")
+async def kitten_status(request: Request):
+    require_local_kitten(request); return dict(_kitten_info)
+
+@app.post("/api/kitten/start")
+async def kitten_start(request: Request):
+    require_local_kitten(request); return dict(await start_kitten_worker())
+
+@app.get("/api/kitten/voices")
+async def kitten_voices(request: Request):
+    require_local_kitten(request)
+    if not _kitten_info["loaded"]: await start_kitten_worker()
+    return {"voices": list(_kitten_info["voices"]), "model": _kitten_info["model"], "device": _kitten_info["device"]}
+
+@app.post("/api/kitten/synthesize")
+async def kitten_synthesize(request: Request):
+    require_local_kitten(request)
+    payload = await request.json()
+    if not isinstance(payload, dict):
+        raise HTTPException(400, "A JSON object is required")
+    # A preview can be requested while the startup task is still loading the
+    # model. Serialize behind that load instead of validating against the
+    # temporarily empty voice catalogue and returning a misleading 400.
+    if not _kitten_info["loaded"]:
+        try:
+            await start_kitten_worker()
+        except Exception as exc:
+            raise HTTPException(503, f"KittenTTS 2 is unavailable: {exc}") from exc
+    supplied_speech = payload.get("speech")
+    speech = supplied_speech if isinstance(supplied_speech, dict) and supplied_speech else {"parts": [{"type": "text", "text": str(payload.get("text", ""))[:4000]}]}
+    text = compile_kitten_speech(speech); voice = str(payload.get("voice", ""))
+    try: energy = max(0.0, min(1.0, float(payload.get("energy", speech.get("energy", 0.5)))))
+    except (TypeError, ValueError): raise HTTPException(400, "Energy must be a number from 0 to 1")
+    if not text:
+        raise HTTPException(400, "Speech text is required")
+    if len(text) > 6000:
+        raise HTTPException(400, "Speech text exceeds the 6000 character limit")
+    if voice not in _kitten_info["voices"]:
+        raise HTTPException(400, f"Unknown KittenTTS 2 voice: {voice or '(empty)'}")
+    try:
+        preset = str(payload.get("preset", "expressive" if supplied_speech else "stable"))
+        if preset not in {"stable", "expressive"}:
+            raise HTTPException(400, "Preset must be stable or expressive")
+        key_source = json.dumps({"model": _kitten_info["model"], "weights": _kitten_info["weights"], "voice": voice, "energy": energy, "preset": preset, "speech": speech}, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        cache_key = hashlib.sha256(key_source.encode()).hexdigest(); cache_path = _kitten_cache_dir / f"{cache_key}.wav"
+        if cache_path.is_file():
+            wav_bytes = cache_path.read_bytes(); generation_ms = duration_ms = 0; cached = True
+        else:
+            result = await kitten_worker_request({"text": text, "voice": voice, "energy": energy, "preset": preset})
+            wav_bytes = base64.b64decode(result["audio_b64"]); generation_ms = int(result["generation_ms"]); duration_ms = int(result["audio_duration_ms"]); cached = False
+            _kitten_cache_dir.mkdir(parents=True, exist_ok=True); cache_path.write_bytes(wav_bytes)
+        _kitten_info["last_synthesis_error"] = None
+        return Response(wav_bytes, media_type="audio/wav", headers={"X-Kitten-Cache-Key": cache_key, "X-Generation-Ms": str(generation_ms), "X-Audio-Duration-Ms": str(duration_ms), "X-Kitten-Cache-Hit": str(cached).lower(), "X-Kitten-Device": str(_kitten_info["device"]), "X-Kitten-Model": KITTEN_MODEL, "X-Kitten-Expression-Mode": str(_kitten_info["expression_mode"])})
+    except Exception as exc:
+        if isinstance(exc, HTTPException): raise
+        _kitten_info["last_synthesis_error"] = f"{type(exc).__name__}: {exc}"
+        logging.getLogger(__name__).exception("KittenTTS synthesis failed")
+        raise HTTPException(503, f"KittenTTS synthesis failed: {exc}")
+
+@app.get("/api/kitten/audio/{cache_key}")
+async def kitten_cached_audio(cache_key: str, request: Request):
+    require_local_kitten(request)
+    if len(cache_key) != 64 or any(c not in "0123456789abcdef" for c in cache_key): raise HTTPException(400, "Invalid speech cache key")
+    path = _kitten_cache_dir / f"{cache_key}.wav"
+    if not path.is_file(): raise HTTPException(404, "Cached actor audio was not found")
+    return FileResponse(path, media_type="audio/wav", headers={"X-Kitten-Cache-Key": cache_key, "Cache-Control": "private, max-age=31536000, immutable"})
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -108,6 +321,295 @@ log.setLevel(logging.INFO)
 if not log.handlers:
     log.addHandler(logging.StreamHandler())
 log.propagate = False
+
+
+async def probe_http_runtime(name: str, base_url: str, path: str) -> dict[str, Any]:
+    """Probe a fixed loopback runtime endpoint; callers cannot supply URLs."""
+    result: dict[str, Any] = {"id": name, "endpoint": base_url, "status": "not_running", "models": []}
+    try:
+        async with httpx.AsyncClient(timeout=1.2, trust_env=False) as client:
+            response = await client.get(f"{base_url}{path}")
+        if response.is_success:
+            result["status"] = "connected"
+            data = response.json()
+            if name == "ollama":
+                models = [
+                    {"id": m.get("name"), "size": m.get("size"), "digest": m.get("digest")}
+                    for m in data.get("models", []) if m.get("name")
+                ]
+                async def inspect(model: dict[str, Any]) -> dict[str, Any]:
+                    try:
+                        async with httpx.AsyncClient(timeout=1.2, trust_env=False) as client:
+                            details = await client.post(f"{base_url}/api/show", json={"name": model["id"]})
+                        if details.is_success:
+                            info = details.json()
+                            model_info = info.get("model_info") or {}
+                            model["architecture"] = model_info.get("general.architecture") or info.get("details", {}).get("family")
+                            model["parameters"] = model_info.get("general.parameter_count")
+                            model["quantization"] = info.get("details", {}).get("quantization_level")
+                            model["context_length"] = next((v for k, v in model_info.items() if k.endswith(".context_length")), None)
+                            model["capabilities"] = info.get("capabilities", [])
+                    except (httpx.HTTPError, ValueError):
+                        pass
+                    return model
+                result["models"] = await asyncio.gather(*(inspect(model) for model in models[:30]))
+                result["version"] = data.get("version")
+            elif name in {"lm_studio", "llama_cpp"}:
+                result["models"] = [
+                    {"id": m.get("id"), "name": m.get("id")}
+                    for m in data.get("data", []) if m.get("id")
+                ]
+            elif name == "sd_cpp":
+                result["models"] = [
+                    {"id": m.get("id"), "name": m.get("id")}
+                    for m in data.get("data", []) if m.get("id")
+                ]
+            elif name == "comfyui":
+                result["device_count"] = len(data.get("devices", []))
+    except (httpx.HTTPError, ValueError):
+        pass
+    return result
+
+
+async def bridge_providers() -> list[dict[str, Any]]:
+    # The fixed endpoint list prevents the hosted browser from turning this bridge
+    # into an arbitrary localhost/LAN proxy.
+    probes = [
+        probe_http_runtime("ollama", "http://127.0.0.1:11434", "/api/tags"),
+        probe_http_runtime("lm_studio", "http://127.0.0.1:1234", "/v1/models"),
+        probe_http_runtime("llama_cpp", "http://127.0.0.1:8080", "/v1/models"),
+    ]
+    found = await asyncio.gather(*probes)
+    sd_candidates = await asyncio.gather(*(probe_http_runtime("sd_cpp", base, "/v1/models") for base in dict.fromkeys((SD_CPP_URL, SD_CPP_DEFAULT_URL))))
+    sd = next((item for item in sd_candidates if item["status"] == "connected" and any(model.get("id") == "sd-cpp-local" for model in item["models"])), None)
+    if sd is None:
+        sd = {"id": "sd_cpp", "endpoint": SD_CPP_URL, "status": "not_running", "models": []}
+    sd["id"] = "sd_cpp"
+    sd["kind"] = "image"
+    sd["advanced"] = False
+    sd["setup_url"] = "https://github.com/leejet/stable-diffusion.cpp"
+    found.append(sd)
+    binaries = {"ollama": "ollama", "lm_studio": "lms", "llama_cpp": "llama-server", "sd_cpp": "sd-server"}
+    for item in found:
+        item["installed"] = shutil.which(binaries[item["id"]]) is not None
+        item.setdefault("kind", "dm")
+        item.setdefault("advanced", False)
+        if item["id"] == "ollama":
+            item["setup_url"] = "https://ollama.com/download"
+    # ComfyUI is intentionally available only in Advanced provider settings.
+    comfy = await probe_http_runtime("comfyui", "http://127.0.0.1:8188", "/system_stats")
+    comfy.update({"installed": shutil.which("comfy") is not None, "kind": "image", "advanced": True})
+    found.append(comfy)
+    return found
+
+
+async def start_allowlisted_service(service: str) -> dict[str, Any]:
+    """Start only an explicitly selected, hard-coded local service."""
+    if MODE == "public":
+        raise HTTPException(404, "Managed services are available only in the local Lantern Bridge")
+    if service != "ollama":
+        raise HTTPException(400, "This Bridge build can start only the allow-listed Ollama service")
+    running = await probe_http_runtime("ollama", OLLAMA_URL, "/api/tags")
+    if running["status"] == "connected":
+        return {"service": "ollama", "status": "connected", "started": False}
+    executable = shutil.which("ollama")
+    if not executable:
+        raise HTTPException(404, "Ollama is not installed. Install it from https://ollama.com/download")
+    proc = managed_services.get(service)
+    if proc is None or proc.returncode is not None:
+        try:
+            isolation = {"start_new_session": True} if os.name != "nt" else {"creationflags": getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)}
+            proc = await asyncio.create_subprocess_exec(
+                executable, "serve", stdout=asyncio.subprocess.DEVNULL,
+                stderr=asyncio.subprocess.DEVNULL, **isolation,
+            )
+            managed_services[service] = proc
+        except OSError as exc:
+            raise HTTPException(503, f"Could not start Ollama: {exc}") from exc
+    for _ in range(24):
+        await asyncio.sleep(0.25)
+        if proc.returncode is not None:
+            raise HTTPException(503, f"Ollama exited during startup (exit code {proc.returncode})")
+        running = await probe_http_runtime("ollama", OLLAMA_URL, "/api/tags")
+        if running["status"] == "connected":
+            return {"service": "ollama", "status": "connected", "started": True, "pid": proc.pid}
+    raise HTTPException(503, "Ollama did not become ready within 6 seconds")
+
+
+def hardware_snapshot() -> dict[str, Any]:
+    memory = {"total_bytes": None, "available_bytes": None}
+    try:
+        for line in Path("/proc/meminfo").read_text().splitlines():
+            key, value = line.split(":", 1)
+            if key in {"MemTotal", "MemAvailable"}:
+                memory["total_bytes" if key == "MemTotal" else "available_bytes"] = int(value.strip().split()[0]) * 1024
+    except (OSError, ValueError):
+        pass
+    gpu = []
+    nvidia_smi = shutil.which("nvidia-smi")
+    if nvidia_smi:
+        try:
+            output = subprocess.run(
+                [nvidia_smi, "--query-gpu=name,memory.total,memory.free,compute_cap", "--format=csv,noheader,nounits"],
+                capture_output=True, text=True, timeout=2, check=False,
+            )
+            if output.returncode == 0:
+                for line in output.stdout.splitlines():
+                    fields = [part.strip() for part in line.split(",", 3)]
+                    if len(fields) == 4:
+                        gpu.append({"name": fields[0], "vram_total_mb": int(fields[1]), "vram_free_mb": int(fields[2]), "compute_capability": fields[3]})
+        except (OSError, subprocess.TimeoutExpired, ValueError):
+            pass
+    try:
+        disk_free = shutil.disk_usage(HERE).free
+    except OSError:
+        disk_free = None
+    return {
+        "gpu": gpu,
+        "ram_total_bytes": memory["total_bytes"],
+        "ram_available_bytes": memory["available_bytes"],
+        "cpu": platform.processor() or platform.machine(),
+        "os": platform.platform(),
+        "disk_free_bytes": disk_free,
+    }
+
+
+async def ollama_models() -> list[dict[str, Any]]:
+    provider = await probe_http_runtime("ollama", OLLAMA_URL, "/api/tags")
+    if provider["status"] != "connected":
+        return []
+    try:
+        async with httpx.AsyncClient(timeout=2, trust_env=False) as client:
+            response = await client.get(f"{OLLAMA_URL}/api/ps")
+        loaded_data = response.json().get("models", []) if response.is_success else []
+    except (httpx.HTTPError, ValueError):
+        loaded_data = []
+    loaded = {model.get("name"): model for model in loaded_data}
+    for model in loaded_data:
+        if model.get("model"):
+            loaded[model["model"]] = model
+    for model in provider["models"]:
+        running = loaded.get(model["id"], {})
+        model["loaded"] = bool(running)
+        model["size_vram"] = running.get("size_vram")
+        model["loaded_context_length"] = running.get("context_length")
+        size = model.get("size") or 0
+        model["estimated"] = not bool(running.get("size_vram"))
+        if not model.get("parameters"):
+            model["parameters"] = model.get("details", {}).get("parameter_size")
+        model["size_gb"] = round(size / 1_000_000_000, 2) if size else None
+    return provider["models"]
+
+
+def profile_plans(models: list[dict[str, Any]], hardware: dict[str, Any]) -> dict[str, Any]:
+    """Produce explainable estimates from currently free resources, not GPU total alone."""
+    # Plan against one physical device until multi-GPU partitioning is measured.
+    primary_gpu = max(hardware.get("gpu", []), key=lambda g: g.get("vram_total_mb") or 0, default={})
+    gpu_total = (primary_gpu.get("vram_total_mb") or 0) / 1024
+    gpu_free = (primary_gpu.get("vram_free_mb") or 0) / 1024
+    ram_free = (hardware.get("ram_available_bytes") or 0) / 1_000_000_000
+    disk_free = (hardware.get("disk_free_bytes") or 0) / 1_000_000_000
+    current = [m for m in models if m.get("loaded")]
+    current_vram = sum((m.get("size_vram") or 0) for m in current) / 1_000_000_000
+    profiles = []
+    fit_by_model: dict[str, dict[str, Any]] = {}
+    for key, ceiling, context in (("Low", 4.0, 4096), ("Medium", 6.0, 8192), ("High", 12.0, 12288), ("Ultra", float("inf"), 16384)):
+        candidates = []
+        for model in models:
+            params = model.get("parameters")
+            if isinstance(params, str):
+                try:
+                    raw = params.strip().lower().replace("b", "e9").replace("m", "e6")
+                    params = float(raw)
+                except ValueError:
+                    params = None
+            elif params is not None:
+                try: params = float(params)
+                except (ValueError, TypeError): params = None
+            if params is None or params > ceiling * 1_000_000_000:
+                continue
+            is_loaded = bool(model.get("loaded") and model.get("size_vram"))
+            if is_loaded:
+                weights_gb = model["size_vram"] / 1_000_000_000
+                loaded_context = int(model.get("loaded_context_length") or 0)
+                kv_gb = max(0, context - loaded_context) / 8192 * 0.45
+                overhead_gb = 0.25
+            else:
+                weights_gb = (model.get("size") or 0) / 1_000_000_000 * 1.1
+                kv_gb = max(0.25, context / 8192 * 0.45)
+                overhead_gb = 0.5
+            need_gb = weights_gb + overhead_gb + kv_gb
+            allocation_need_gb = max(0, need_gb - weights_gb) if is_loaded else need_gb
+            need_description = f"About {allocation_need_gb:.1f} GB additional VRAM is needed" if is_loaded else f"About {need_gb:.1f} GB VRAM is needed"
+            measured = bool(model.get("benchmark"))
+            if gpu_total <= 0:
+                if ram_free >= need_gb + 4:
+                    fit, reason = "cpu_offload", f"No GPU was detected; about {need_gb:.1f} GB of model memory must fit in system RAM and will be extremely slow."
+                else:
+                    fit, reason = "unsafe", "No GPU was detected and system RAM does not have safe headroom."
+            elif allocation_need_gb <= max(0, gpu_free - 0.75):
+                fit, reason = "fits_comfortably", f"{need_description} with {gpu_free:.1f} GB currently free."
+            elif allocation_need_gb <= gpu_free:
+                fit, reason = "fits", f"{need_description} from {gpu_free:.1f} GB currently free; headroom is limited."
+            elif allocation_need_gb <= gpu_free + current_vram and ram_free >= 4:
+                fit, reason = "fits_with_swapping", f"{need_description}; only {gpu_free:.1f} GB is free now. Unload the active local model first."
+            elif gpu_free <= 0:
+                fit, reason = "unsafe", "No live free VRAM was reported; Bridge will not assume total VRAM is available."
+            elif allocation_need_gb <= gpu_free + max(0, ram_free - 4):
+                fit, reason = "cpu_offload", f"{need_description}; CPU offload may work but will be extremely slow."
+            else:
+                fit, reason = "unsafe", f"{need_description}, beyond practical free GPU and RAM headroom."
+            benchmark = model.get("benchmark") or {}
+            candidates.append({"model": model["id"], "fit": fit, "estimated_vram_gb": round(need_gb, 2), "measurement": "Measured" if measured else "Estimated", "context": context, "reason": reason, "loaded": model.get("loaded", False), "decode_tokens_per_second": benchmark.get("decode_tokens_per_second"), "parameter_count": params})
+            fit_by_model.setdefault(model["id"], {})[key.lower()] = {"fit": fit, "estimated_vram_gb": round(need_gb, 2), "measurement": "Measured" if measured else "Estimated", "reason": reason}
+        candidates.sort(key=lambda item: ({"fits_comfortably": 0, "fits": 1, "fits_with_swapping": 2, "cpu_offload": 3, "unsafe": 4}[item["fit"]], 0 if item["measurement"] == "Measured" else 1, -(item["decode_tokens_per_second"] or 0), -(item["parameter_count"] or 0)))
+        usable = [item for item in candidates if item["fit"] != "unsafe"]
+        selected = usable[0] if usable else None
+        profiles.append({"id": key.lower(), "name": key, "available": bool(selected), "selected_model": selected["model"] if selected else None, "fit": selected["fit"] if selected else "unavailable", "context": context, "measurement": selected["measurement"] if selected else "Estimated", "reason": selected["reason"] if selected else "No installed Ollama model fits this profile with current free memory."})
+    for model in models:
+        model["fit_by_profile"] = fit_by_model.get(model["id"], {})
+    measured = [p for p in profiles if p["available"] and p["measurement"] == "Measured"]
+    measured_safe = [p for p in measured if p["fit"] in {"fits_comfortably", "fits"}]
+    recommended = max(measured_safe, key=lambda p: ["low", "medium", "high", "ultra"].index(p["id"]))["id"] if measured_safe else next((p["id"] for p in profiles if p["id"] == "medium" and p["available"] and p["fit"] in {"fits_comfortably", "fits"}), None) or next((p["id"] for p in profiles if p["available"] and p["fit"] in {"fits_comfortably", "fits"}), None) or next((p["id"] for p in profiles if p["available"]), "low")
+    return {"default": "auto", "recommended": recommended, "resources": {"gpu_total_gb": round(gpu_total, 2), "gpu_free_gb": round(gpu_free, 2), "loaded_model_vram_gb": round(current_vram, 2), "ram_free_gb": round(ram_free, 2), "disk_free_gb": round(disk_free, 2)}, "profiles": profiles, "models": models}
+
+
+async def unload_ollama_model(model: str) -> None:
+    try:
+        async with httpx.AsyncClient(timeout=30, trust_env=False) as client:
+            response = await client.post(f"{OLLAMA_URL}/api/generate", json={"model": model, "prompt": "", "keep_alive": 0, "stream": False})
+        response.raise_for_status()
+    except httpx.HTTPError as exc:
+        raise HTTPException(503, f"Could not unload Ollama model {model}: {exc}") from exc
+
+
+async def prepare_ollama_model(model_id: str, profile_id: str) -> None:
+    """Validate a plan and unload other Ollama models before loading this DM model."""
+    models = await ollama_models()
+    target = next((model for model in models if model["id"] == model_id), None)
+    if not target:
+        raise HTTPException(404, "Selected Ollama model is not installed")
+    profile_plans(models, hardware_snapshot())
+    fit = target.get("fit_by_profile", {}).get(profile_id)
+    if not fit:
+        raise HTTPException(409, f"{model_id} does not have enough model metadata for the {profile_id.title()} profile; benchmark or choose a smaller known model")
+    if fit["fit"] == "unsafe":
+        raise HTTPException(409, fit["reason"])
+    if fit["fit"] in {"fits_with_swapping", "cpu_offload"}:
+        others = [item for item in models if item.get("loaded") and item["id"] != model_id]
+        for item in others:
+            await unload_ollama_model(item["id"])
+        if others:
+            for _ in range(16):
+                await asyncio.sleep(0.25)
+                refreshed = await ollama_models()
+                if all(not item.get("loaded") for item in refreshed if item["id"] != model_id):
+                    break
+            profile_plans(refreshed, hardware_snapshot())
+            target = next((item for item in refreshed if item["id"] == model_id), target)
+            fit = target.get("fit_by_profile", {}).get(profile_id)
+            if not fit or fit["fit"] == "unsafe":
+                raise HTTPException(409, fit["reason"] if fit else "Memory plan could not be rechecked after unloading local models")
 
 
 def allowed_return_origins() -> set[str]:
@@ -172,6 +674,9 @@ def load_json(path: Path) -> dict[str, Any] | None:
         return json.loads(path.read_text(encoding="utf-8"))
     except (FileNotFoundError, json.JSONDecodeError):
         return None
+
+
+benchmark_cache.update(load_json(BENCHMARK_PATH) or {})
 
 
 def host_id() -> str:
@@ -276,6 +781,20 @@ def sse(event: str, data: Any) -> str:
 
 
 DM_TOOLS: list[dict[str, Any]] = [
+    {
+        "type": "function", "name": "speak_line",
+        "description": "Deliver one spoken line from a named, persistent character. Use the exact speaker_id from the supplied entity/character directory. Keep ordinary DM narration in the normal response. Use neutral emotion and no events for neutral lines; expression is optional and should be sparse. Never include Kitten markup in text.",
+        "parameters": {"type": "object", "properties": {
+            "speaker_id": {"type": "string"},
+            "emotion": {"type": ["string", "null"], "enum": ["angry", "contemplative", "excited", "joyful", "mundane", "nervous", "sad", "stern", "surprised", "tender", None]},
+            "energy": {"type": "number", "minimum": 0, "maximum": 1},
+            "parts": {"type": "array", "minItems": 1, "maxItems": 30, "items": {"type": "object", "properties": {
+                "type": {"type": "string", "enum": ["text", "emphasis", "event"]},
+                "text": {"type": "string"},
+                "event": {"type": ["string", "null"], "enum": ["gasp", "giggle", "growl", "gulp", "laugh", "pause", "scoff", "sigh", "sob", "um", None]},
+            }, "required": ["type", "text", "event"], "additionalProperties": False}},
+        }, "required": ["speaker_id", "emotion", "energy", "parts"], "additionalProperties": False}, "strict": True,
+    },
     {
         "type": "function",
         "name": "set_next_moves",
@@ -440,9 +959,14 @@ async def favicon():
     return Response(status_code=204)
 
 
-@app.get("/download/companion.py")
+@app.get("/download/bridge.py")
 async def download_companion():
-    return FileResponse(Path(__file__).resolve(), media_type="text/x-python", filename="lantern_table_companion.py")
+    return FileResponse(Path(__file__).resolve(), media_type="text/x-python", filename="lantern_bridge.py")
+
+
+@app.get("/download/companion.py")
+async def download_companion_compat():
+    return await download_companion()
 
 
 @app.get("/api/ice")
@@ -555,8 +1079,8 @@ async def ws_room(websocket: WebSocket, room: str, peer_id: str):
             signal_type = str(data.get("type", "signal"))[:32]
             payload = data.get("payload") if isinstance(data.get("payload"), dict) else {}
             target = str(data.get("target", "*"))[:96]
-            player_to_host = {"hello", "offer", "answer", "ice", "player_action", "player_intent", "character_claim", "character_patch", "snapshot_ack", "resync_request", "peer_info", "pong", "diagnostic"}
-            host_to_players = {"offer", "answer", "ice", "snapshot", "snapshot_ack_received", "canonical_event", "action_rejected", "character_patch_ack", "dm_delta", "dm_done", "dm_tool", "dice", "atmosphere", "drawing", "drawing_event", "audio_cue", "character_claimed", "peer_info", "ping", "diagnostic"}
+            player_to_host = {"hello", "offer", "answer", "ice", "player_action", "player_intent", "character_claim", "character_patch", "snapshot_ack", "resync_request", "peer_info", "pong", "speech_ready", "speech_audio_request", "diagnostic"}
+            host_to_players = {"offer", "answer", "ice", "snapshot", "snapshot_ack_received", "canonical_event", "action_rejected", "character_patch_ack", "dm_delta", "dm_done", "dm_tool", "dice", "atmosphere", "drawing", "drawing_event", "audio_cue", "character_claimed", "peer_info", "ping", "speech_prepared", "speech_audio_chunk", "speech_start", "speech_end", "diagnostic"}
             if role != "host" and (signal_type not in player_to_host or target != "host") and signal_type != "diagnostic":
                 log.warning("lantern-message-rejected room=%s role=%s peer=%s type=%s target=%s", room, role, peer_id[-8:], signal_type, target[-8:])
                 continue
@@ -799,11 +1323,10 @@ async def auth_logout():
 @app.get("/api/session")
 async def api_session():
     if MODE == "public":
-        return {"connected": False, "mode": "public", "companion_required": True, "image_generation": False}
+        return {"connected": False, "mode": "public", "companion_required": True, "image_generation": False, "bridge": "Lantern Bridge"}
     creds = current_creds()
-    image_enabled = False
     if not creds:
-        return {"connected": False, "mode": MODE, "image_generation": False}
+        return {"connected": False, "mode": MODE, "image_generation": False, "bridge": "Lantern Bridge"}
     return {
         "connected": True,
         "mode": MODE,
@@ -812,13 +1335,119 @@ async def api_session():
         "plan_usage": "chatgpt.tokens.use.direct" in creds.get("scopes", []),
         "image_generation": False,
         "image_provider": None,
+        "bridge": "Lantern Bridge",
     }
 
 
+@app.get("/api/providers")
+async def api_providers():
+    if MODE == "public":
+        return {"providers": [], "mode": "public"}
+    providers = await bridge_providers()
+    creds = current_creds()
+    providers.insert(0, {
+        "id": "chatgpt", "kind": "dm", "status": "connected" if creds else "needs_sign_in",
+        "name": creds.get("name") or creds.get("email") if creds else None,
+        "installed": True,
+    })
+    return {"providers": providers, "mode": MODE}
+
+
+@app.post("/api/providers/{service}/start")
+async def api_start_provider(service: str):
+    return await start_allowlisted_service(service)
+
+
+@app.post("/api/providers/ollama/unload")
+async def api_unload_ollama(request: Request):
+    if MODE == "public":
+        raise HTTPException(404, "Managed services are available only in the local Lantern Bridge")
+    body = await request.json()
+    model_id = str(body.get("model") or "")
+    models = await ollama_models()
+    if not any(model["id"] == model_id for model in models):
+        raise HTTPException(404, "Selected Ollama model is not installed")
+    await unload_ollama_model(model_id)
+    return {"provider": "ollama", "model": model_id, "status": "unloaded"}
+
+
+@app.get("/api/hardware")
+async def api_hardware():
+    if MODE == "public":
+        return {"available": False, "mode": "public"}
+    return {"available": True, **hardware_snapshot()}
+
+
 @app.get("/api/models")
-async def api_models():
+async def api_models(provider: str = "chatgpt"):
+    if MODE == "public":
+        raise HTTPException(404, "Models are available only through Lantern Bridge on the host")
+    if provider == "ollama":
+        if (await probe_http_runtime("ollama", OLLAMA_URL, "/api/tags"))["status"] != "connected":
+            return {"provider": "ollama", "models": []}
+        models = await ollama_models()
+        enriched = []
+        for model in models:
+            item = {**model, "slug": model["id"], "display_name": model["id"], "capabilities": model.get("capabilities", []), "tool_capable": "tools" in model.get("capabilities", []), "measurement": "Measured" if any(b.get("model") == model["id"] and b.get("tool_reliable") for b in benchmark_cache.values()) else "Estimated"}
+            enriched.append(item)
+        return {"provider": "ollama", "models": enriched}
+    if provider != "chatgpt":
+        raise HTTPException(400, "Unsupported model provider")
     creds = await auth_creds()
     return {"models": await list_models(creds)}
+
+
+@app.get("/api/profiles")
+async def api_profiles():
+    if MODE == "public":
+        return {"available": False, "mode": "public", "profiles": []}
+    models = await ollama_models()
+    for model in models:
+        matches = [item for item in benchmark_cache.values() if item.get("model") == model["id"] and item.get("tool_reliable")]
+        if matches:
+            model["benchmark"] = max(matches, key=lambda item: item.get("decode_tokens_per_second") or 0)
+            model["measurement"] = "Measured"
+        else:
+            model["measurement"] = "Estimated"
+    return {"available": True, **profile_plans(models, hardware_snapshot())}
+
+
+@app.post("/api/benchmark")
+async def api_benchmark(request: Request):
+    if MODE == "public":
+        raise HTTPException(404, "Benchmarks run on the host Lantern Bridge")
+    body = await request.json()
+    provider = body.get("provider", "ollama")
+    model = str(body.get("model") or "")
+    if provider != "ollama":
+        raise HTTPException(400, "This benchmark endpoint currently supports Ollama models")
+    models = await ollama_models()
+    candidate = next((item for item in models if item["id"] == model), None)
+    if not candidate:
+        raise HTTPException(404, "Selected Ollama model is not available")
+    hardware = hardware_snapshot()
+    hardware_identity = {"gpu": [{"name": g.get("name"), "vram_total_mb": g.get("vram_total_mb"), "compute_capability": g.get("compute_capability")} for g in hardware.get("gpu", [])], "cpu": hardware.get("cpu"), "os": hardware.get("os")}
+    identity = json.dumps({"hardware": hardware_identity, "runtime": (await probe_http_runtime("ollama", OLLAMA_URL, "/api/tags")).get("version"), "model": candidate.get("digest") or model, "quantization": candidate.get("quantization"), "context": 512}, sort_keys=True)
+    fingerprint = hashlib.sha256(identity.encode()).hexdigest()
+    if fingerprint in benchmark_cache:
+        return {**benchmark_cache[fingerprint], "cached": True}
+    started = time.perf_counter()
+    tool = {"type": "function", "function": {"name": "lantern_probe", "description": "Call this tool with the requested argument.", "parameters": {"type": "object", "properties": {"value": {"type": "string"}}, "required": ["value"], "additionalProperties": False}}}
+    try:
+        async with httpx.AsyncClient(timeout=120, trust_env=False) as client:
+            response = await client.post(f"{OLLAMA_URL}/api/chat", json={"model": model, "stream": False, "messages": [{"role": "user", "content": "Call lantern_probe with value exactly 'lantern-ready'."}], "tools": [tool], "options": {"num_ctx": 512, "num_predict": 64}, "keep_alive": "5m"})
+        response.raise_for_status()
+        result = response.json()
+    except (httpx.HTTPError, ValueError) as exc:
+        raise HTTPException(503, f"Ollama benchmark failed: {exc}") from exc
+    message = result.get("message", {})
+    calls = message.get("tool_calls") or []
+    correct = any(c.get("function", {}).get("name") == "lantern_probe" and c.get("function", {}).get("arguments", {}).get("value") == "lantern-ready" for c in calls)
+    eval_count, eval_ns = result.get("eval_count", 0), result.get("eval_duration", 0)
+    measured = {"provider": provider, "model": model, "fingerprint": fingerprint, "tool_reliability": "1/1" if correct else "0/1", "tool_reliable": correct, "prompt_eval_ms": round((result.get("prompt_eval_duration", 0) or 0) / 1e6), "cold_load_ms": round((result.get("load_duration", 0) or 0) / 1e6), "decode_tokens_per_second": round(eval_count / (eval_ns / 1e9), 2) if eval_ns else None, "wall_ms": round((time.perf_counter() - started) * 1000), "measurement": "Measured", "cached": False}
+    benchmark_cache[fingerprint] = measured
+    atomic_private_json(BENCHMARK_PATH, benchmark_cache)
+    return measured
 
 
 def build_history(body: dict[str, Any]) -> list[dict[str, str]]:
@@ -836,12 +1465,28 @@ def build_history(body: dict[str, Any]) -> list[dict[str, str]]:
     return history
 
 
+def response_output_text(response: dict[str, Any]) -> str:
+    """Recover final visible text if a provider omitted streamed text deltas."""
+    chunks: list[str] = []
+    for item in response.get("output", []):
+        if not isinstance(item, dict) or item.get("type") != "message":
+            continue
+        for part in item.get("content", []):
+            if isinstance(part, dict) and part.get("type") == "output_text":
+                text = str(part.get("text", ""))
+                if text:
+                    chunks.append(text)
+    return "\n\n".join(chunks).strip()
+
+
 def dm_instructions(body: dict[str, Any]) -> str:
     settings = body.get("campaign_settings", {})
     return f"""You are the Dungeon Master for a collaborative tabletop fantasy RPG named {body.get('campaign', 'Lantern Table')}.
 
 PLAY STYLE
 - Write the spoken/narrated part of every turn as clean Markdown. Use short headings, emphasis, blockquotes, lists, and tables only when they improve playability.
+- For dialogue spoken by a named persistent NPC, call speak_line with that character's exact supplied speaker_id. Keep the dialogue text in the speech parts and out of the surrounding Markdown so it appears only once in the transcript. Use one call per distinct speaker line; do not turn incidental quoted text or player speech into actor lines.
+- Speech parts are semantic data: text parts carry words, emphasis parts mark only a short stressed phrase, and event parts carry one supported vocal event. Leave emotion null for neutral dialogue. Use emotion, energy, vocal events, and emphasis sparingly and only when the fiction supports them. Never write Kitten tags or markup in Markdown.
 - Be vivid but interactive: usually 2-6 short paragraphs. Never decide a player character's thoughts, dialogue, or choices.
 - Treat each player message as an attempted action, not as authority over the world. The player controls their character's intent; you adjudicate whether it is possible, what it costs, what roll or resource is required, and what happens. Do not grant success merely because the player states an outcome.
 - Players cannot declare changes to weather, time, location, NPC behavior, monsters, treasure, or other characters. Such changes require an established fictional cause and a capability the character actually has (for example, a listed spell or feature with the required resources). If the capability is absent or the effect exceeds it, explain the limit in the fiction and offer valid alternatives.
@@ -914,6 +1559,8 @@ Effect semantics:
 - Transitions should usually be 900-2400ms. Use intensity 0.15-0.45 normally; exceed 0.65 only for short dramatic moments. If players need to read dense cards, lower effects instead of increasing them.
 
 CURRENT LOCAL STATE
+Campaign identity: {json.dumps({'campaign_id': body.get('campaign_id'), 'campaign_name': body.get('campaign'), 'game_session': body.get('game_session', {})}, ensure_ascii=False)}
+Persistent campaign context and bounded prior-session summaries: {json.dumps(body.get('campaign_context', {}), ensure_ascii=False)}
 Game phase: {json.dumps(body.get('game', {'phase':'freeplay'}), ensure_ascii=False)}
 Combat/turn state: {json.dumps(body.get('combat', {}), ensure_ascii=False)}
 AUTHORITATIVE CURRENT SCENE: {json.dumps(body.get('current_scene', body.get('scene', {})), ensure_ascii=False)}
@@ -928,12 +1575,106 @@ Recent journal: {str(body.get('journal', ''))[-5000:]}
 """
 
 
+def chat_tools() -> list[dict[str, Any]]:
+    definitions = []
+    for group in DM_TOOLS:
+        nested = group.get("tools", []) if group.get("type") == "namespace" else [group]
+        for item in nested:
+            if item.get("type") != "function":
+                continue
+            definitions.append({"type": "function", "function": {
+                "name": item["name"], "description": item.get("description", ""),
+                "parameters": item.get("parameters", {"type": "object", "properties": {}}),
+                "strict": item.get("strict", False),
+            }})
+    return definitions
+
+
+async def ollama_dm_events(body: dict[str, Any], model: str) -> AsyncIterator[str]:
+    yield sse("meta", {"model": model, "provider": "ollama", "phase": "thinking"})
+    calls: dict[int, dict[str, Any]] = {}
+    announced: set[int] = set()
+    try:
+        messages = [{"role": "system", "content": dm_instructions(body)}, *build_history(body)]
+        async with httpx.AsyncClient(timeout=httpx.Timeout(180, connect=5), trust_env=False) as client:
+            async with client.stream("POST", f"{OLLAMA_URL}/api/chat", json={"model": model, "messages": messages, "tools": chat_tools(), "stream": True, "options": {"num_ctx": int(body.get("context", 8192))}, "keep_alive": "5m"}) as response:
+                if response.is_error:
+                    detail = (await response.aread()).decode(errors="replace")
+                    yield sse("error", {"message": f"Ollama returned HTTP {response.status_code}: {detail[:900]}", "status": response.status_code})
+                    return
+                final: dict[str, Any] = {}
+                async for line in response.aiter_lines():
+                    if not line.strip():
+                        continue
+                    try:
+                        chunk = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+                    message = chunk.get("message") or {}
+                    if message.get("content"):
+                        yield sse("delta", {"delta": message["content"]})
+                    chunk_calls = message.get("tool_calls", [])
+                    for position, call in enumerate(chunk_calls):
+                        index = int(call.get("index", position if len(chunk_calls) > 1 else 0))
+                        target = calls.setdefault(index, {"id": call.get("id") or secrets.token_hex(8), "name": "", "arguments": {}})
+                        function = call.get("function") or {}
+                        if function.get("name"):
+                            target["name"] = function["name"]
+                        args = function.get("arguments")
+                        if isinstance(args, dict):
+                            target["arguments"].update(args)
+                        elif isinstance(args, str):
+                            target["argument_text"] = target.get("argument_text", "") + args
+                        if index not in announced and target["name"]:
+                            announced.add(index)
+                            yield sse("tool_status", {"name": target["name"], "status": "preparing"})
+                    if chunk.get("done"):
+                        final = chunk
+                        break
+        for call in calls.values():
+            args = call["arguments"]
+            if call.get("argument_text"):
+                try:
+                    args.update(json.loads(call["argument_text"]))
+                except json.JSONDecodeError:
+                    args = {"raw": call["argument_text"]}
+            yield sse("tool", {"name": call["name"].rsplit(".", 1)[-1], "arguments": args, "call_id": call["id"]})
+        eval_count = final.get("eval_count", 0)
+        eval_ns = final.get("eval_duration", 0)
+        yield sse("done", {"model": model, "provider": "ollama", "usage": {"input_tokens": final.get("prompt_eval_count", 0), "output_tokens": eval_count}, "metrics": {"load_ms": round((final.get("load_duration", 0) or 0) / 1e6), "prompt_eval_ms": round((final.get("prompt_eval_duration", 0) or 0) / 1e6), "decode_tokens_per_second": round(eval_count / (eval_ns / 1e9), 2) if eval_ns else None}})
+    except httpx.HTTPError as exc:
+        yield sse("error", {"message": f"Ollama connection error: {exc}"})
+    except Exception as exc:
+        log.exception("Ollama DM stream failed")
+        yield sse("error", {"message": f"Ollama DM stream error: {exc}"})
+
+
 @app.post("/api/dm/stream")
 async def api_dm_stream(request: Request):
     if MODE == "public":
         raise HTTPException(503, "Run the Lantern Table companion on the host device for ChatGPT-plan inference")
-    creds = await auth_creds()
     body = await request.json()
+    provider = body.get("provider", "chatgpt")
+    if provider == "ollama":
+        models = await ollama_models()
+        if not models:
+            raise HTTPException(503, "Ollama is not running. Start it from Lantern Bridge AI Connections first.")
+        requested = body.get("model")
+        model = requested or next((m["id"] for m in models if "tools" in m.get("capabilities", [])), models[0]["id"])
+        if not any(m["id"] == model for m in models):
+            raise HTTPException(400, "Selected Ollama model is not installed")
+        profile_id = body.get("profile", "auto")
+        if profile_id == "auto":
+            profile_id = profile_plans(models, hardware_snapshot())["recommended"]
+        if profile_id not in {"low", "medium", "high", "ultra"}:
+            raise HTTPException(400, "Unknown local inference profile")
+        await prepare_ollama_model(model, profile_id)
+        profile = next(item for item in profile_plans(models, hardware_snapshot())["profiles"] if item["id"] == profile_id)
+        body["context"] = profile["context"]
+        return StreamingResponse(ollama_dm_events(body, model), media_type="text/event-stream", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+    if provider != "chatgpt":
+        raise HTTPException(400, "Unsupported DM provider")
+    creds = await auth_creds()
     model = await choose_model(creds, body.get("model"))
     payload = {
         "model": model,
@@ -958,6 +1699,7 @@ async def api_dm_stream(request: Request):
         tool_calls: dict[int, dict[str, Any]] = {}
         sent_tools: set[str] = set()
         completed = False
+        streamed_text = ""
         try:
             timeout = httpx.Timeout(180.0, connect=30.0)
             async with httpx.AsyncClient(timeout=timeout) as client:
@@ -988,6 +1730,7 @@ async def api_dm_stream(request: Request):
                         if etype == "response.output_text.delta":
                             delta = event.get("delta", "")
                             if delta:
+                                streamed_text += delta
                                 yield sse("delta", {"delta": delta})
                         elif etype == "response.output_item.added":
                             item = event.get("item", {})
@@ -1021,6 +1764,9 @@ async def api_dm_stream(request: Request):
                         elif etype == "response.completed":
                             completed = True
                             response = event.get("response", {})
+                            final_text = response_output_text(response)
+                            if final_text and not streamed_text:
+                                yield sse("delta", {"delta": final_text})
                             usage = response.get("usage") or {}
                             # Fallback: emit any function calls present in the terminal response.
                             for item in response.get("output", []):

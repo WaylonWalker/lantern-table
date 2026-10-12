@@ -1,24 +1,12 @@
+import { splitKokoroText } from './kokoro-text.mjs';
+import { inspectPcm } from './pcm-validation.mjs';
+
 let tts = null;
 let backend = null;
 let dtype = null;
 let loadPromise = null;
 let lastProgress = -1;
-
-function splitForKokoro(text, maxLength = 180) {
-  const sentences = String(text).match(/[^.!?]+[.!?]+["')\]}]*|[^.!?]+$/g) || [String(text)];
-  const chunks = [];
-  for (const sentence of sentences) {
-    let remainder = sentence.trim();
-    while (remainder.length > maxLength) {
-      let splitAt = remainder.lastIndexOf(' ', maxLength);
-      if (splitAt < Math.floor(maxLength * 0.55)) splitAt = maxLength;
-      chunks.push(remainder.slice(0, splitAt).trim());
-      remainder = remainder.slice(splitAt).trim();
-    }
-    if (remainder) chunks.push(remainder);
-  }
-  return chunks;
-}
+const cancelledRequests = new Set();
 
 function postError(id, error) {
   self.postMessage({ id, type: 'error', message: error?.message || String(error) });
@@ -59,6 +47,7 @@ async function load(device, modelDtype) {
 
 self.onmessage = async ({ data }) => {
   const { id, type } = data;
+  if (type === 'cancel') { cancelledRequests.add(data.requestId); return; }
   try {
     if (type === 'load') {
       const result = await load(data.device, data.dtype);
@@ -67,16 +56,21 @@ self.onmessage = async ({ data }) => {
     }
     if (type === 'generate') {
       if (!tts) throw Error('Kokoro is not loaded');
-      const chunks = splitForKokoro(data.text);
+      const chunks = splitKokoroText(data.text, data.maxPassageLength || 320);
       for (let index = 0; index < chunks.length; index++) {
+        if (cancelledRequests.has(id)) break;
         const text = chunks[index];
-        self.postMessage({ id, type: 'progress', phase: 'generate', text: `Generating sentence ${index + 1} of ${chunks.length} (${backend})…` });
+        self.postMessage({ id, type: 'progress', phase: 'generate', text: `Generating passage ${index + 1} of ${chunks.length} (${backend})…` });
         const audio = await tts.generate(text, { voice: data.voice, speed: data.speed });
+        if (cancelledRequests.has(id)) break;
         if (!audio.audio || !audio.sampling_rate) throw Error('Kokoro returned no PCM audio');
         const samples = audio.audio instanceof Float32Array ? audio.audio.slice() : new Float32Array(audio.audio);
+        const pcm = inspectPcm(samples);
+        if (!pcm.valid) throw Error(`PCM validation failed for passage ${index + 1}: finite ratio ${pcm.finiteRatio.toFixed(5)}, peak ${pcm.peak.toFixed(6)}, RMS ${pcm.rms.toFixed(6)}`);
         const samplesBuffer = samples.buffer;
         self.postMessage({ id, type: 'chunk', text, index, total: chunks.length, backend, samples: samplesBuffer, samplingRate: audio.sampling_rate }, [samplesBuffer]);
       }
+      if (cancelledRequests.delete(id)) return;
       self.postMessage({ id, type: 'result', backend, dtype, chunks: chunks.length });
       return;
     }

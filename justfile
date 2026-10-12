@@ -108,6 +108,7 @@ logs-valkey:
 
 validate:
     python -m py_compile dnd_chatgpt_server.py
+    uv run --script tests/test_bridge_runtime.py
     python -m py_compile scripts/check_websocket.py scripts/wss_multiplayer_smoke.py
     if command -v node >/dev/null; then node --check assets/app.js && node --check scripts/webrtc_smoke.mjs && node --check assets/rules5e.mjs && node --check assets/campaign-scenes.mjs && node --check assets/audio-core.mjs && node --check assets/audio-service.mjs && node --test tests/*.test.mjs; fi
     if command -v kubectl >/dev/null; then kubectl kustomize k8s >/dev/null; fi

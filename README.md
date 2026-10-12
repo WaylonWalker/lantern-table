@@ -12,7 +12,7 @@ The campaign wizard offers one-click presets for Heroic Fantasy, Creeping Horror
 
 ### Rich AI Dungeon Master
 
-The local ChatGPT companion streams Responses API output into rendered Markdown. The DM has structured tools to:
+Lantern Bridge runs on the host device and streams DM responses into the browser. ChatGPT uses the Responses API; local Ollama inference uses Ollama's native model and chat APIs. Both feed Lantern's normalized text and tool stream. The host can:
 
 - suggest 2–5 next moves while preserving free-form play
 - request local dice rolls
@@ -20,6 +20,8 @@ The local ChatGPT companion streams Responses API output into rendered Markdown.
 - propose reviewable campaign-state patches
 - change the table atmosphere with a theme + environmental effects
 - suggest polished prompts for scene, map, character, object, and handout art
+
+The host AI Connections panel discovers Ollama, LM Studio, llama.cpp, ChatGPT, and the Lantern image engine. Ollama is the supported local DM adapter in this increment; the host can explicitly start it from the panel, select an installed model, view live-memory profile estimates, and run a local tool-call benchmark. Discovery never starts every installed runtime. ComfyUI is reported only as an advanced connector and is hidden from the normal connection list.
 
 Lantern Table does **not** generate images in this build. Players can upload/paste their own images, attach them to scenes or characters, draw in the built-in canvas, and copy the DM's suggested image prompts into any image generator they prefer.
 
@@ -137,7 +139,7 @@ https://dnd.waylonwalker.com/#join=ABCD-123
 
 A joining browser bypasses campaign creation, connects to signaling, receives the host snapshot, then removes the temporary join fragment from the address bar.
 
-## Public service vs local ChatGPT companion
+## Public service vs local Lantern Bridge
 
 OpenAI's current open-source Sign in with ChatGPT plan-sharing flow uses a loopback callback on the user's own device. Because of that, the Kubernetes pod is deliberately **not** the holder of user ChatGPT credentials.
 
@@ -147,9 +149,9 @@ To run the hot-reloading, single-player app locally:
 just serve
 ```
 
-Then open **http://127.0.0.1:8765**. The server watches Python, HTML, CSS, JavaScript, and SVG files and restarts when they change. Refresh the browser to load the updated UI. This runs the host-side companion in the same process, so ChatGPT sign-in is available locally; multiplayer signaling remains disabled.
+Then open **http://127.0.0.1:8765**. The server watches Python, HTML, CSS, JavaScript, and SVG files and restarts when they change. Refresh the browser to load the updated UI. This runs Lantern Bridge in the same process, so ChatGPT sign-in and fixed loopback runtime discovery are available locally; multiplayer signaling remains disabled.
 
-Run the public service in Kubernetes, then the campaign host runs the included companion locally:
+Run the public service in Kubernetes, then the campaign host runs Lantern Bridge locally:
 
 ```bash
 just companion
@@ -161,19 +163,26 @@ or:
 ./dnd_chatgpt_server.py
 ```
 
-The hosted page does **not** probe localhost automatically. After a host creates a campaign, Lantern Table shows an explicit AI-DM setup sheet. The host downloads/runs the companion, chooses **Continue with ChatGPT**, then checks the connection. Once authorized, the DM autonomously opens the first playable scene.
+The hosted page does **not** probe localhost from joining players. A host opens AI Connections and runs Lantern Bridge on the host device. The host may authorize ChatGPT and connect local runtimes independently. ChatGPT and Ollama DM streaming use the same normalized stream path.
 
-Joining players never probe `127.0.0.1`, never install the companion, and never need a ChatGPT login. The companion handles OAuth/token refresh and streams the Dungeon Master response; the public service handles multiplayer signaling only.
+Joining players never probe `127.0.0.1`, never install Lantern Bridge, and never configure AI. Lantern Bridge handles host-side OAuth/token refresh and inference; the public service handles multiplayer signaling only.
 
 ## Local data
 
-- campaign/game state: browser localStorage (`lantern-table-v4`)
+- campaign/game state: browser localStorage (`lantern-table-campaign-v1:*`), indexed by `lantern-table-campaign-index-v1`; older `lantern-table-v4` saves are imported without dropping their timeline or transcript
+- game sessions: stored inside their campaign snapshot with numbered play sessions, first-class Session Zero, planned/live/paused/ended/archived lifecycle, attendance, recap, and start/end scene references
+- durable campaign/session views: `#campaign=<id>` and `#campaign=<id>&session=<id>`; opening a historical session reads its session log without restoring its old campaign state
 - uploaded images and drawings: browser IndexedDB (`lantern-table-assets`)
 - stable player ID: browser localStorage / optional exported Player Pass
-- ChatGPT OAuth credentials: `~/.config/lantern-table/chatgpt.json` on the host companion only
-- companion host registration ID: `~/.config/lantern-table/host.json`
+- ChatGPT OAuth credentials: `~/.config/lantern-table/chatgpt.json` on the host Bridge only
+- local benchmark cache: `~/.config/lantern-table/benchmarks.json` on the host Bridge only
+- Bridge host registration ID: `~/.config/lantern-table/host.json`
+
+Campaigns own the continuing world state. New game sessions keep that same party, location, quests, NPCs, and character state while scoping transcript and timeline context to the current session. The AI DM receives the current campaign/session identity, current session history, and bounded summaries from ended sessions. Campaign data remains on participant devices; the host browser remains authoritative for shared play.
 
 No OpenAI API key or image-generation API path is included in this build.
+
+The provider and progressive image-generation roadmap is documented in the [Lantern Bridge handoff](LANTERN_BRIDGE_HANDOFF.md).
 
 ## Container + homelab defaults
 
