@@ -16,7 +16,7 @@
 Run:
     chmod +x dnd_chatgpt_server.py
     ./dnd_chatgpt_server.py
-Then open http://127.0.0.1:8765
+Then open http://127.0.0.1:8766
 
 Campaign state, drawings, and attached image bytes remain in the browser. The local Bridge
 stores ChatGPT OAuth credentials and a non-sensitive benchmark cache under ~/.config/lantern-table
@@ -62,7 +62,7 @@ from jwt import PyJWKClient
 HOST = "127.0.0.1"  # OAuth loopback host required by the current open-source ChatGPT sign-in flow.
 MODE = os.environ.get("LANTERN_MODE", "companion").lower()  # companion or public
 BIND_HOST = os.environ.get("LANTERN_BIND", "0.0.0.0" if MODE == "public" else HOST)
-PORT = int(os.environ.get("LANTERN_PORT", "8765"))
+PORT = int(os.environ.get("LANTERN_PORT", "8766"))
 APP_NAME = "Lantern Table"
 BRIDGE_NAME = "Lantern Bridge"
 RESOURCE = "https://api.openai.com/v1"
@@ -291,8 +291,8 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "https://dnd.waylonwalker.com",
-        "http://127.0.0.1:8765",
-        "http://localhost:8765",
+        f"http://127.0.0.1:{PORT}",
+        f"http://localhost:{PORT}",
         *[o.strip() for o in os.environ.get("LANTERN_CORS_ORIGINS", "").split(",") if o.strip()],
     ],
     allow_credentials=False,
@@ -614,8 +614,8 @@ async def prepare_ollama_model(model_id: str, profile_id: str) -> None:
 
 def allowed_return_origins() -> set[str]:
     values = {
-        "http://127.0.0.1:8765",
-        "http://localhost:8765",
+        f"http://127.0.0.1:{PORT}",
+        f"http://localhost:{PORT}",
         os.environ.get("LANTERN_PUBLIC_ORIGIN", "https://dnd.waylonwalker.com").rstrip("/"),
     }
     for raw in (os.environ.get("LANTERN_CORS_ORIGINS", ""), os.environ.get("LANTERN_RETURN_ORIGINS", "")):
@@ -932,7 +932,7 @@ async def api_config():
     return {
         "mode": MODE,
         "public_origin": os.environ.get("LANTERN_PUBLIC_ORIGIN", "https://dnd.waylonwalker.com"),
-        "companion_origin": os.environ.get("LANTERN_COMPANION_ORIGIN", "http://127.0.0.1:8765"),
+        "companion_origin": os.environ.get("LANTERN_COMPANION_ORIGIN", "http://127.0.0.1:8766"),
         "signaling": MODE == "public",
         "signaling_healthy": (redis_ok if REDIS_URL else True),
         "multi_replica": bool(REDIS_URL and redis_ok),
