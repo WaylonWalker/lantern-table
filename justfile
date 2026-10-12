@@ -145,3 +145,15 @@ smoke-webrtc:
 # Public host/player WebSocket gameplay protocol, including cross-pod routing.
 smoke-multiplayer:
     python scripts/wss_multiplayer_smoke.py "${LANTERN_PUBLIC_URL:-https://dnd.waylonwalker.com}"
+
+# Capture the local character experience and relevant source into a review ZIP.
+ui-audit:
+    uv run --script scripts/ui_audit.py
+
+# Capture the public app without submitting changes or creating user data.
+ui-audit-prod:
+    UI_AUDIT_BASE_URL=https://dnd.waylonwalker.com/ uv run --script scripts/ui_audit.py
+
+# Compare the two latest audit manifests and journey outcomes.
+ui-audit-compare:
+    uv run --script scripts/ui_audit_compare.py
