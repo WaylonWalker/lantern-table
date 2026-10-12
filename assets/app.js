@@ -1535,102 +1535,29 @@ function setCharacterPath(object,path,value){if(!playerEditableCharacterPath(pat
 function editCharacterPath(path,val,type='text'){const c=currentCharacter(),value=type==='number'?Number(val)||0:type==='boolean'?Boolean(val):val;if(rtc.role==='player'||rtc.role==='host'&&state.campaign.dmPlayerId!==state.localPlayer.id){proposeCharacterChange(c,path,value);renderCharacter();return}const mechanical=/^(class|species|subclass|hp|maxHp|ac|level|speed|proficiencyBonus|abilities|saves|skills|conditions|deathSaves|resources|features|spells|inventory|proficiencies)(\.|$)/.test(path);if(rtc.role==='player'&&(!state.campaign.permissions.playersEditOwnCharacter||!playerEditableCharacterPath(path)))return toast('Character stats are controlled by the host');if(mechanical&&(c.mechanicsState==='locked'||state.campaign.mechanicsLockedAt)){if(rtc.role==='player')return toast('Mechanical corrections require the host');const reason=prompt('Reason for this host mechanics correction:');if(!reason?.trim()){renderCharacter();return}const oldValue=path.split('.').reduce((value,key)=>value?.[key],c);setCharacterPath(c,path,value);const correction={eventId:uid('mechanics'),eventType:'host_mechanics_correction',at:nowISO(),sourceRule:'lantern:host-correction',actorId:state.localPlayer.id,targetIds:[c.entityId||c.id],intent:{kind:'host_correction',path,reason:reason.trim()},outcome:{before:oldValue,after:value},mutations:[{entityId:c.entityId||c.id,field:path,value}]};state.mechanicalEvents.push(correction);addEvent('host_mechanics_correction',`${c.name}: ${path} corrected by host`,{actor:state.localPlayer.name,entityId:c.entityId,details:{eventId:correction.eventId,path,reason:reason.trim()}})}else{setCharacterPath(c,path,value);if(mechanical)c.mechanicsState='initialized'}save({broadcast:rtc.role!=='player'});render()}
 function editCharacterList(path,val){editCharacterPath(path,val.split('\n').map(x=>x.trim()).filter(Boolean))}
 function rollAbility(key,label){const c=currentCharacter();submitCombatIntent({kind:'ability_check',ability:key,skill:null,dc:null,openRoll:true,sourceRule:'srd5.1:ability-check',reason:`Unopposed ${label} die`},c.id)}
-// Scratch-style custom character programming workspace. Rules are inert until validated by a future engine.
-let scratchBlocklyPromise=null,scratchWorkspace=null,scratchRenderGeneration=0;
-function loadScratchBlockly(){
-  if(window.Blockly)return Promise.resolve(window.Blockly);
-  if(scratchBlocklyPromise)return scratchBlocklyPromise;
-  scratchBlocklyPromise=new Promise((resolve,reject)=>{
-    const script=document.createElement('script');
-    script.src='https://cdn.jsdelivr.net/npm/blockly@11.2.1/blockly.min.js';
-    script.async=true;
-    script.onload=()=>window.Blockly?resolve(window.Blockly):reject(new Error('Blockly did not initialize'));
-    script.onerror=()=>reject(new Error('Could not load Blockly. Check network access.'));
-    document.head.append(script);
-  }).catch(error=>{scratchBlocklyPromise=null;throw error});
-  return scratchBlocklyPromise;
-}
-function defineScratchBlocks(Blockly){
-  if(Blockly.Blocks.lantern_character_name)return;
-  Blockly.defineBlocksWithJsonArray([
-    {type:'lantern_character_name',message0:'character name %1',args0:[{type:'field_input',name:'NAME',text:''}],previousStatement:null,nextStatement:null,colour:35},
-    {type:'lantern_character_description',message0:'description %1',args0:[{type:'field_input',name:'TEXT',text:''}],previousStatement:null,nextStatement:null,colour:35},
-    {type:'lantern_custom_stat',message0:'stat %1 starts at %2',args0:[{type:'field_input',name:'NAME',text:'Bee Power'},{type:'field_number',name:'VALUE',value:0}],previousStatement:null,nextStatement:null,colour:230},
-    {type:'lantern_custom_resource',message0:'resource %1 amount %2',args0:[{type:'field_input',name:'NAME',text:'Mana'},{type:'field_number',name:'VALUE',value:0}],previousStatement:null,nextStatement:null,colour:230},
-    {type:'lantern_ability',message0:'ability %1 %2 do %3',args0:[{type:'field_input',name:'NAME',text:'New power'},{type:'input_dummy'},{type:'input_statement',name:'BODY'}],previousStatement:null,nextStatement:null,colour:285},
-    {type:'lantern_when_used',message0:'when %1 is used %2',args0:[{type:'field_input',name:'EVENT',text:'ability'},{type:'input_statement',name:'BODY'}],colour:45},
-    {type:'lantern_damage',message0:'deal %1 damage',args0:[{type:'input_value',name:'AMOUNT',check:'Number'}],previousStatement:null,nextStatement:null,colour:0},
-    {type:'lantern_heal',message0:'heal %1',args0:[{type:'input_value',name:'AMOUNT',check:'Number'}],previousStatement:null,nextStatement:null,colour:120},
-    {type:'lantern_item',message0:'item %1',args0:[{type:'field_input',name:'NAME',text:'Magic item'}],previousStatement:null,nextStatement:null,colour:195},
-    {type:'lantern_rule',message0:'rule %1',args0:[{type:'field_input',name:'TEXT',text:'Describe a rule'}],previousStatement:null,nextStatement:null,colour:15}
-  ]);
-}
-const SCRATCH_TOOLBOX={kind:'categoryToolbox',contents:[
-  {kind:'category',name:'Character',colour:'#a3653b',contents:['lantern_character_name','lantern_character_description','lantern_item'].map(type=>({kind:'block',type}))},
-  {kind:'category',name:'Stats',colour:'#4872c4',contents:['lantern_custom_stat','lantern_custom_resource'].map(type=>({kind:'block',type}))},
-  {kind:'category',name:'Powers',colour:'#9650bc',contents:['lantern_ability','lantern_when_used','lantern_damage','lantern_heal','lantern_rule'].map(type=>({kind:'block',type}))},
-  {kind:'category',name:'Logic',colour:'#4c9b65',contents:['controls_if','logic_compare','logic_boolean','logic_operation','controls_repeat_ext'].map(type=>({kind:'block',type}))},
-  {kind:'category',name:'Numbers & words',colour:'#bf8c34',contents:['math_number','math_arithmetic','text','text_join'].map(type=>({kind:'block',type}))},
-  {kind:'category',name:'Variables',custom:'VARIABLE',colour:'#b26b3a'}
-]};
+
 function renderScratchCharacter(){
   const view=$('view-character'),layout=view?.querySelector('.character-layout');
   if(!view||!layout)return;
-  const generation=++scratchRenderGeneration;
-  if(scratchWorkspace){scratchWorkspace.dispose();scratchWorkspace=null}
   view.querySelector('#scratch-character-builder')?.remove();
   const scratch=getCharacterMode()==='scratch';
   layout.hidden=scratch;
   if(!scratch)return;
-  const character=currentCharacter();
-  const build=character.customBuild&&typeof character.customBuild==='object'?character.customBuild:{};
-  character.customBuild=build;
-  const canEdit=rtc.role!=='player'&&canHostEdit();
+  const c=currentCharacter(),build=c.customBuild&&typeof c.customBuild==='object'?c.customBuild:{};
+  c.customBuild=build;
   const root=document.createElement('article');root.id='scratch-character-builder';root.className='scratch-builder panel-card';
   const header=document.createElement('header');header.className='scratch-builder-header';
-  const intro=document.createElement('div');intro.innerHTML='<span class="eyebrow">Homebrew · From Scratch</span><h2>Character canvas</h2><p>An open, dark canvas inspired by Excalidraw. Drag blocks from the palette, connect them, and create your own rules. Blocks do not execute in combat yet.</p>';
+  const intro=document.createElement('div');intro.innerHTML='<span class="eyebrow">Homebrew · From Scratch</span><h2>Character canvas</h2><p>Create your character freely with writing, drawings, shapes, and arrows. No mandatory 5e rules.</p>';
   const change=document.createElement('button');change.type='button';change.className='button compact';change.textContent='Change creation path';change.onclick=openCharacterPathChooser;
   header.append(intro,change);root.append(header);
-  const status=document.createElement('p');status.className='small-note';status.textContent='Loading visual blocks…';status.setAttribute('role','status');root.append(status);
-  const canvas=document.createElement('div');canvas.className='scratch-blockly-canvas';canvas.setAttribute('aria-label','Homebrew character block programming workspace');root.append(canvas);
-  const toolbar=document.createElement('div');toolbar.className='button-row';
-  const reset=document.createElement('button');reset.type='button';reset.className='button compact danger';reset.textContent='Clear all blocks';reset.disabled=!canEdit;
-  reset.onclick=()=>{if(!scratchWorkspace||!confirm('Delete every block from this custom character?'))return;scratchWorkspace.clear();build.workspace=null;save()};
-  toolbar.append(reset);root.append(toolbar);
+  const canvas=document.createElement('div');canvas.className='character-canvas-mount';root.append(canvas);
+  const status=document.createElement('p');status.className='small-note';status.textContent='Loading canvas…';root.append(status);
   layout.after(root);
-  loadScratchBlockly().then(Blockly=>{
-    if(generation!==scratchRenderGeneration||!root.isConnected)return;
-    defineScratchBlocks(Blockly);
-    const theme=Blockly.Theme.defineTheme('lanternMidnight',{
-      base:Blockly.Themes.Classic,
-      componentStyles:{
-        workspaceBackgroundColour:'#151923',
-        toolboxBackgroundColour:'#202632',
-        toolboxForegroundColour:'#eae6df',
-        flyoutBackgroundColour:'#252c39',
-        flyoutForegroundColour:'#f5eee3',
-        flyoutOpacity:0.97,
-        scrollbarColour:'#6a7486',
-        insertionMarkerColour:'#ffd07a',
-        insertionMarkerOpacity:0.35,
-        cursorColour:'#ffd07a',
-        selectedGlowColour:'#e6b450',
-        selectedGlowOpacity:0.5,
-        replacementGlowColour:'#79bf97',
-        replacementGlowOpacity:0.4
-      }
-    });
-    const workspace=Blockly.inject(canvas,{toolbox:SCRATCH_TOOLBOX,theme,trashcan:canEdit,scrollbars:true,grid:{spacing:24,length:1,colour:'#31394a',snap:false},move:{scrollbars:true,drag:true,wheel:true},zoom:{controls:true,wheel:true,startScale:0.85,minScale:0.35,maxScale:2},readOnly:!canEdit,renderer:'geras'});
-    scratchWorkspace=workspace;
-    if(build.workspace){try{Blockly.serialization.workspaces.load(build.workspace,workspace)}catch(error){status.textContent='Saved blocks could not be loaded. Your stored data is preserved.';console.warn('Invalid saved scratch workspace',error);return}}
-    status.textContent=canEdit?'Drag blocks from the left. Changes save with your character.':'View only: your host manages custom blocks.';
-    workspace.addChangeListener(event=>{
-      if(!canEdit||event.isUiEvent||event.type===Blockly.Events.FINISHED_LOADING)return;
-      build.workspace=Blockly.serialization.workspaces.save(workspace);
-      save();
-    });
-    Blockly.svgResize(workspace);
-  }).catch(error=>{if(generation!==scratchRenderGeneration)return;status.textContent='Block editor unavailable: '+error.message+'. Reload when online.';canvas.hidden=true});
+  import('/assets/character-canvas.mjs').then(({createCharacterCanvas})=>{
+    if(!root.isConnected)return;
+    createCharacterCanvas({mount:canvas,scene:build.canvas||(build.canvas={elements:[],camera:{x:0,y:0,scale:1}}),editable:rtc.role!=='player'&&canHostEdit(),onChange:()=>save()});
+    status.textContent='Autosaved with your character. These drawings describe your homebrew; they do not execute as game rules.';
+  }).catch(error=>{status.textContent='Could not load canvas: '+error.message});
 }
 function renderCharacterFull(){
   const c=currentCharacter();Object.assign(c,normalizeCharacter(c));const hp=Math.max(0,Number(c.hp)||0),maxHp=Math.max(1,Number(c.maxHp)||1),hpPercent=Math.min(100,Math.round(hp/maxHp*100));
