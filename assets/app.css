@@ -113,3 +113,13 @@ input:disabled,textarea:disabled{opacity:.72;cursor:not-allowed}
 .character-card .ability-card:focus-within{border-color:var(--accent);box-shadow:0 0 0 2px color-mix(in srgb,var(--accent) 14%,transparent)}
 .character-card .mini-die:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
 @media(prefers-reduced-motion:reduce){.character-card .sheet-section{transition:none}}
+
+/* Character sheet: navigation between focused editing sections. */
+.character-sheet-tabs{display:flex;gap:6px;overflow-x:auto;padding:5px 0 10px;margin-bottom:12px;scrollbar-width:thin}
+.character-sheet-tabs button{flex:0 0 auto;border:1px solid var(--line);border-radius:11px;background:var(--surface2);color:var(--muted);padding:9px 12px;font-weight:700}
+.character-sheet-tabs button.active{color:var(--accent);background:color-mix(in srgb,var(--accent) 11%,var(--surface));border-color:color-mix(in srgb,var(--accent) 55%,var(--line))}
+.character-sheet-tabs button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.character-tab-panel[hidden]{display:none!important}
+.character-tab-coming{padding:16px;border:1px dashed var(--line);border-radius:12px;background:var(--surface2)}
+.character-tab-coming h3{margin:0 0 6px;font:700 21px Georgia,serif}
+.character-tab-coming p{color:var(--muted);margin:0}
