@@ -1565,7 +1565,7 @@ function renderScratchCharacter(){
   }
   const root=document.createElement('article');root.id='scratch-character-builder';root.className='scratch-builder brew-builder';
   const header=document.createElement('header');header.className='brew-header';
-  const brand=document.createElement('div');brand.innerHTML='<span class="eyebrow">HOME BREW · LANTERN TABLE</span><h2>Character Homebrewery</h2><p>Write on the left. Watch your character page take shape on the right.</p>';
+  const brand=document.createElement('div');brand.innerHTML='<span class="eyebrow">HOME BREW · LANTERN TABLE</span><h2>The Living Codex</h2><p>Write on the left. Watch your character page take shape on the right.</p>';
   const change=document.createElement('button');change.type='button';change.className='button compact';change.textContent='Change creation path';change.onclick=openCharacterPathChooser;
   header.append(brand,change);
   const toolbar=document.createElement('nav');toolbar.className='brew-toolbar';toolbar.setAttribute('aria-label','Writing shortcuts');
