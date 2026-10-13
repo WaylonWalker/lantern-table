@@ -1535,6 +1535,79 @@ function setCharacterPath(object,path,value){if(!playerEditableCharacterPath(pat
 function editCharacterPath(path,val,type='text'){const c=currentCharacter(),value=type==='number'?Number(val)||0:type==='boolean'?Boolean(val):val;if(rtc.role==='player'||rtc.role==='host'&&state.campaign.dmPlayerId!==state.localPlayer.id){proposeCharacterChange(c,path,value);renderCharacter();return}const mechanical=/^(class|species|subclass|hp|maxHp|ac|level|speed|proficiencyBonus|abilities|saves|skills|conditions|deathSaves|resources|features|spells|inventory|proficiencies)(\.|$)/.test(path);if(rtc.role==='player'&&(!state.campaign.permissions.playersEditOwnCharacter||!playerEditableCharacterPath(path)))return toast('Character stats are controlled by the host');if(mechanical&&(c.mechanicsState==='locked'||state.campaign.mechanicsLockedAt)){if(rtc.role==='player')return toast('Mechanical corrections require the host');const reason=prompt('Reason for this host mechanics correction:');if(!reason?.trim()){renderCharacter();return}const oldValue=path.split('.').reduce((value,key)=>value?.[key],c);setCharacterPath(c,path,value);const correction={eventId:uid('mechanics'),eventType:'host_mechanics_correction',at:nowISO(),sourceRule:'lantern:host-correction',actorId:state.localPlayer.id,targetIds:[c.entityId||c.id],intent:{kind:'host_correction',path,reason:reason.trim()},outcome:{before:oldValue,after:value},mutations:[{entityId:c.entityId||c.id,field:path,value}]};state.mechanicalEvents.push(correction);addEvent('host_mechanics_correction',`${c.name}: ${path} corrected by host`,{actor:state.localPlayer.name,entityId:c.entityId,details:{eventId:correction.eventId,path,reason:reason.trim()}})}else{setCharacterPath(c,path,value);if(mechanical)c.mechanicsState='initialized'}save({broadcast:rtc.role!=='player'});render()}
 function editCharacterList(path,val){editCharacterPath(path,val.split('\n').map(x=>x.trim()).filter(Boolean))}
 function rollAbility(key,label){const c=currentCharacter();submitCombatIntent({kind:'ability_check',ability:key,skill:null,dc:null,openRoll:true,sourceRule:'srd5.1:ability-check',reason:`Unopposed ${label} die`},c.id)}
+
+// Practical, flexible homebrew sheet. Entirely independent of fixed D&D 5e values.
+
+function renderScratchCharacter(){
+  const view=$('view-character'),layout=view?.querySelector('.character-layout');
+  if(!view||!layout)return;
+  view.querySelector('#scratch-character-builder')?.remove();
+  const scratch=getCharacterMode()==='scratch';layout.hidden=scratch;if(!scratch)return;
+  const c=currentCharacter(),build=c.customBuild&&typeof c.customBuild==='object'?c.customBuild:{};
+  c.customBuild=build;
+  const editable=rtc.role!=='player'&&canHostEdit();
+  const escapeHtml=text=>String(text??'').replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+  if(typeof build.brewText!=='string'){
+    const sheet=build.sheet||{}, sections=sheet.sections||{};
+    const lines=['# '+(sheet.name||build.name||'Untitled Hero')];
+    const concept=sheet.concept||build.concept||'';
+    if(concept)lines.push('**Concept:** '+concept);
+    if(sheet.role)lines.push('**Role:** '+sheet.role);
+    if(sheet.level)lines.push('**Level / Rank:** '+sheet.level);
+    if(sheet.backstory||build.story)lines.push('## Story','',sheet.backstory||build.story);
+    const categories=[['abilities','Abilities & Powers'],['stats','Stats & Resources'],['inventory','Equipment & Items'],['rules','Special Rules'],['notes','Notes']];
+    for(const [key,label] of categories){
+      const entries=Array.isArray(sections[key])?sections[key]:[];
+      if(entries.length){lines.push('', '## '+label);for(const item of entries){lines.push('### '+(item.name||'Untitled'),item.value?'**Value / Uses:** '+item.value:'',item.description||'')}}
+    }
+    if(!Object.keys(sections).length&&build.groups){for(const [key,entries] of Object.entries(build.groups)){if(!Array.isArray(entries)||!entries.length)continue;lines.push('','## '+key);for(const entry of entries)lines.push('### '+(entry.name||'Untitled'),entry.details||'')}}
+    build.brewText=lines.filter((line,i)=>line!==''||i!==0).join('\n');
+  }
+  const root=document.createElement('article');root.id='scratch-character-builder';root.className='scratch-builder brew-builder';
+  const header=document.createElement('header');header.className='brew-header';
+  const brand=document.createElement('div');brand.innerHTML='<span class="eyebrow">HOME BREW · LANTERN TABLE</span><h2>The Living Codex</h2><p>Write on the left. Watch your character page take shape on the right.</p>';
+  const change=document.createElement('button');change.type='button';change.className='button compact';change.textContent='Change creation path';change.onclick=openCharacterPathChooser;
+  header.append(brand,change);
+  const toolbar=document.createElement('nav');toolbar.className='brew-toolbar';toolbar.setAttribute('aria-label','Writing shortcuts');
+  const panes=document.createElement('div');panes.className='brew-panes';
+  const source=document.createElement('section');source.className='brew-source';
+  const sourceLabel=document.createElement('div');sourceLabel.className='brew-pane-label';sourceLabel.textContent='EDITOR · MARKDOWN';
+  const input=document.createElement('textarea');input.className='brew-editor';input.setAttribute('aria-label','Homebrew character source');input.value=build.brewText;input.spellcheck=true;input.disabled=!editable;
+  source.append(sourceLabel,input);
+  const preview=document.createElement('section');preview.className='brew-preview-wrap';
+  const previewLabel=document.createElement('div');previewLabel.className='brew-pane-label';previewLabel.textContent='LIVE CHARACTER PREVIEW';
+  const paper=document.createElement('div');paper.className='brew-paper';preview.append(previewLabel,paper);
+  panes.append(source,preview);root.append(header,toolbar,panes);
+  const help=document.createElement('p');help.className='small-note';help.textContent=editable?'Use # for title, ## for sections, ### for abilities, **bold**, and - for lists. Autosaves while typing.':'Read-only: the host can edit this homebrew character.';
+  root.append(help);layout.after(root);
+  function renderPreview(){
+    paper.replaceChildren();
+    const lines=input.value.split(/\r?\n/);
+    let paragraph=[];
+    const flush=()=>{if(!paragraph.length)return;const p=document.createElement('p');inline(p,paragraph.join(' '));paper.append(p);paragraph=[]};
+    function inline(node,line){
+      const parts=line.split(/(\*\*[^*]+\*\*)/g);
+      for(const part of parts){if(part.startsWith('**')&&part.endsWith('**')&&part.length>4){const b=document.createElement('strong');b.textContent=part.slice(2,-2);node.append(b)}else node.append(document.createTextNode(part))}
+    }
+    for(const line of lines){
+      if(!line.trim()){flush();continue}
+      const match=line.match(/^(#{1,3})\s+(.+)$/);
+      if(match){flush();const h=document.createElement('h'+match[1].length);h.textContent=match[2];paper.append(h);continue}
+      if(/^\s*[-*]\s+/.test(line)){flush();const list=paper.lastElementChild?.tagName==='UL'?paper.lastElementChild:document.createElement('ul');if(!list.isConnected)paper.append(list);const li=document.createElement('li');inline(li,line.replace(/^\s*[-*]\s+/,''));list.append(li);continue}
+      paragraph.push(line.trim());
+    }
+    flush();
+  }
+  let pending=null;
+  input.addEventListener('input',()=>{build.brewText=input.value;renderPreview();clearTimeout(pending);pending=setTimeout(()=>save(),350)});
+  input.addEventListener('blur',()=>{if(pending){clearTimeout(pending);pending=null;save()}});
+  for(const [label,prefix,suffix] of [['Title','# ',''],['Section','## ',''],['Ability','### ',''],['Bold','**','**'],['List','- ','']]){
+    const button=document.createElement('button');button.type='button';button.className='button compact';button.textContent=label;button.disabled=!editable;
+    button.onclick=()=>{const start=input.selectionStart,end=input.selectionEnd,selection=input.value.slice(start,end),insert=prefix+(selection||label)+suffix;input.setRangeText(insert,start,end,'select');input.dispatchEvent(new Event('input'));input.focus()};
+    toolbar.append(button);
+  }
+  renderPreview();
+}
 function renderCharacterFull(){
   const c=currentCharacter();Object.assign(c,normalizeCharacter(c));const hp=Math.max(0,Number(c.hp)||0),maxHp=Math.max(1,Number(c.maxHp)||1),hpPercent=Math.min(100,Math.round(hp/maxHp*100));
   const abilities=[['str','Strength'],['dex','Dexterity'],['con','Constitution'],['int','Intelligence'],['wis','Wisdom'],['cha','Charisma']];
@@ -1550,7 +1623,7 @@ function renderCharacterFull(){
   if(rtc.role==='player'){const homebrewHint=$('.homebrew-section .sheet-section-heading small');if(homebrewHint)homebrewHint.textContent='Host-controlled custom rules'}
   const lockNotice=document.createElement('p');lockNotice.className='muted character-lock-notice';lockNotice.textContent=rtc.role==='player'?(state.campaign.permissions.playersEditOwnCharacter?'You can propose changes across your character sheet. The host and DM must approve them.':'The host has disabled character change requests.'):(state.campaign.dmPlayerId===state.localPlayer.id?'Your character changes take effect directly because you are the DM.':'Your character changes wait for DM approval.');$('characterForm').prepend(lockNotice);
   $$('[data-char-path],[data-char-list]').forEach(x=>{const path=x.dataset.charPath||x.dataset.charList;x.disabled=rtc.role==='player'&&(!state.campaign.permissions.playersEditOwnCharacter||!playerEditableCharacterPath(path))});
-  $$('[data-char-path]').forEach(x=>x.onchange=()=>editCharacterPath(x.dataset.charPath,x.type==='checkbox'?x.checked:x.value,x.dataset.charType||'text'));$$('[data-char-list]').forEach(x=>x.onchange=()=>editCharacterList(x.dataset.charList,x.value));$$('[data-roll-ability]').forEach(x=>x.onclick=()=>rollAbility(x.dataset.rollAbility,x.dataset.rollLabel));mountCharacterSheetTabs();enhanceHomebrewWorkshop();const portrait=getAssetUrl(c.portraitAssetId);$('portraitSlot').classList.toggle('has-image',!!portrait);$('portraitSlot').style.backgroundImage=portrait?`url("${portrait}")`:'';$('partyList').innerHTML=state.characters.map(ch=>`<div class="party-member"><div class="avatar">${esc(ch.name[0]||'?')}</div><div class="meta"><b>${esc(ch.name)}</b><small>${esc(ch.class)} · Lv ${ch.level} · ${esc(ch.location||state.scene.location)}</small></div><span>${ch.hp}/${ch.maxHp} HP</span></div>`).join('')}
+  $$('[data-char-path]').forEach(x=>x.onchange=()=>editCharacterPath(x.dataset.charPath,x.type==='checkbox'?x.checked:x.value,x.dataset.charType||'text'));$$('[data-char-list]').forEach(x=>x.onchange=()=>editCharacterList(x.dataset.charList,x.value));$$('[data-roll-ability]').forEach(x=>x.onclick=()=>rollAbility(x.dataset.rollAbility,x.dataset.rollLabel));mountCharacterSheetTabs();enhanceHomebrewWorkshop();renderScratchCharacter();const portrait=getAssetUrl(c.portraitAssetId);$('portraitSlot').classList.toggle('has-image',!!portrait);$('portraitSlot').style.backgroundImage=portrait?`url("${portrait}")`:'';$('partyList').innerHTML=state.characters.map(ch=>`<div class="party-member"><div class="avatar">${esc(ch.name[0]||'?')}</div><div class="meta"><b>${esc(ch.name)}</b><small>${esc(ch.class)} · Lv ${ch.level} · ${esc(ch.location||state.scene.location)}</small></div><span>${ch.hp}/${ch.maxHp} HP</span></div>`).join('')}
 renderCharacter=renderCharacterFull;
 
 // Startup ------------------------------------------------------------------------

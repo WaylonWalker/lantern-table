@@ -141,3 +141,69 @@ input:disabled,textarea:disabled{opacity:.72;cursor:not-allowed}
 .homebrew-workshop-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px}
 .character-path-choices button:focus-visible,.homebrew-workshop-grid button:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
 @media(max-width:600px){.character-path-choices{grid-template-columns:1fr}.homebrew-workshop-intro{flex-direction:column}.character-path-card{padding:20px}}
+
+/* From Scratch: intentionally separate from the fixed D&D 5e sheet. */
+#view-character .character-layout[hidden]{display:none!important}
+.scratch-builder{display:grid;gap:22px;max-width:980px;margin:auto}
+.scratch-builder-header{display:flex;justify-content:space-between;align-items:start;gap:20px;padding-bottom:18px;border-bottom:1px solid var(--line)}
+.scratch-builder-header h2{font:700 clamp(28px,4vw,42px) Georgia,serif;margin:6px 0}
+.scratch-builder-header p{margin:0;color:var(--muted);max-width:680px}
+.scratch-builder-header button{flex-shrink:0}
+.scratch-builder-identity,.scratch-builder-group{display:grid;gap:12px;padding:14px;border:1px solid var(--line);border-radius:15px;background:color-mix(in srgb,var(--surface2) 55%,transparent)}
+.scratch-builder-identity h3,.scratch-builder-group h3{margin:0;font:700 21px Georgia,serif}
+.scratch-builder-group-heading{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.scratch-builder-empty{padding:20px 10px;color:var(--muted);font-size:13px;text-align:center;border:1px dashed var(--line);border-radius:10px;margin:0}
+.scratch-builder-entry{display:grid;gap:8px;padding:12px;border:1px solid var(--line);border-radius:12px;background:var(--surface)}
+.scratch-builder-entry>.button{justify-self:end}
+@media(max-width:600px){.scratch-builder-header{flex-direction:column}.scratch-builder .form-grid.two{grid-template-columns:1fr}.scratch-builder-group-heading{align-items:start}}
+
+/* Freeform character block editor */
+.scratch-block-list{display:grid;gap:12px}
+.scratch-block{padding:12px;border:1px solid var(--line);border-radius:14px;background:var(--surface2);display:grid;gap:10px}
+.scratch-block:focus-within{border-color:color-mix(in srgb,var(--accent) 55%,var(--line))}
+.scratch-block-toolbar{display:flex;flex-wrap:wrap;align-items:center;gap:6px}
+.scratch-block-toolbar select{width:auto;max-width:100%;flex:1 1 140px}
+.scratch-block-toolbar button{font-size:12px;padding:7px 9px}
+.scratch-block-content{width:100%;min-height:42px}
+textarea.scratch-block-content{resize:vertical;min-height:95px}
+.scratch-block-add{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding-top:8px;border-top:1px solid var(--line)}
+.scratch-block-add select{width:auto;flex:1 1 170px}
+@media(max-width:600px){.scratch-block-toolbar button{flex:1 1 auto}.scratch-block-add button{flex:1 1 100%}}
+
+
+/* Practical homebrew sheet: no drawing canvas or visual programming dependencies. */
+.scratch-builder{max-width:1100px;margin:0 auto;display:grid;gap:18px;padding:18px}
+.scratch-practical-section{display:grid;gap:12px;padding:18px;border:1px solid var(--line);border-radius:14px;background:var(--surface2)}
+.scratch-practical-section h3{margin:0;font-size:20px}
+.scratch-practical-section-head,.scratch-practical-actions{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.scratch-practical-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.scratch-practical-field{display:grid;gap:6px;min-width:0}
+.scratch-practical-field span{font-size:13px;font-weight:600;color:var(--muted)}
+.scratch-practical-field input,.scratch-practical-field textarea{width:100%;max-width:100%}
+.scratch-practical-field textarea{resize:vertical;min-height:86px}
+.scratch-practical-entry{display:grid;gap:12px;padding:13px;border:1px solid var(--line);border-radius:12px;background:var(--surface)}
+.scratch-practical-actions{justify-content:flex-end}
+.scratch-practical-empty{color:var(--muted);margin:0;font-size:13px}
+@media(max-width:620px){.scratch-practical-grid{grid-template-columns:1fr}.scratch-builder{padding:10px}.scratch-practical-section{padding:13px}}
+
+/* Homebrewery-inspired writing desk and printable fantasy character page. */
+.brew-builder{max-width:none!important;margin:0;display:grid;gap:14px;padding:16px;background:var(--surface)}
+.brew-header{display:flex;align-items:center;justify-content:space-between;gap:18px}
+.brew-header h2{font-family:Georgia,serif;margin:4px 0;font-size:clamp(24px,3vw,36px)}
+.brew-header p{margin:0;color:var(--muted)}
+.brew-toolbar{display:flex;flex-wrap:wrap;gap:7px;padding:9px 0}
+.brew-panes{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:14px;min-height:620px}
+.brew-source,.brew-preview-wrap{display:flex;flex-direction:column;min-width:0;border:1px solid var(--line);border-radius:10px;overflow:hidden;background:#151a23}
+.brew-pane-label{font:700 11px ui-monospace,monospace;letter-spacing:.13em;padding:12px 15px;background:#252c38;color:#d5bb86}
+.brew-editor{display:block;flex:1;width:100%;min-height:600px;resize:vertical;background:#151a23!important;color:#eee9df!important;padding:23px!important;border:0!important;border-radius:0!important;line-height:1.7;font:14px/1.7 ui-monospace,SFMono-Regular,Consolas,monospace;tab-size:2}
+.brew-editor:focus-visible{outline:2px solid #c4a96d;outline-offset:-2px}
+.brew-preview-wrap{background:#202530}
+.brew-paper{flex:1;padding:44px clamp(22px,3vw,48px);background:#e7deca;color:#29251f;font:16px/1.55 Georgia,serif;overflow-wrap:anywhere;box-shadow:inset 0 0 75px #85673516}
+.brew-paper h1,.brew-paper h2,.brew-paper h3{color:#5e3027;line-height:1.2;break-after:avoid}
+.brew-paper h1{font-size:34px;text-align:center;border-bottom:3px solid #a65039;padding-bottom:12px;margin:0 0 23px}
+.brew-paper h2{font-size:23px;border-bottom:2px solid #bb8e6b;margin:26px 0 12px}
+.brew-paper h3{font-size:18px;margin:18px 0 8px}
+.brew-paper p{margin:9px 0 15px}
+.brew-paper ul{padding-left:22px}
+@media(max-width:800px){.brew-panes{grid-template-columns:1fr}.brew-editor{min-height:310px}.brew-paper{min-height:440px}.brew-header{align-items:flex-start;flex-direction:column}.brew-builder{padding:8px}}
+@media print{.brew-header,.brew-toolbar,.brew-source,.brew-pane-label,.brew-builder>.small-note{display:none!important}.brew-panes{display:block}.brew-preview-wrap{border:0}.brew-paper{background:white;box-shadow:none}}
