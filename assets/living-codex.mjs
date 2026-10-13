@@ -26,7 +26,8 @@ export function validateCodexProposal(proposal, character, characters, campaign,
       errors.push(prefix + 'requires nonempty text under 4000 characters.'); continue;
     }
     if (op.op === 'add' && ARRAYS.has(op.section)) {
-      if (!Array.isArray(character[op.section])) errors.push(prefix + 'character section is not a list.');
+      if (campaign?.mechanicsLockedAt || character.mechanicsState === 'locked') errors.push(prefix + 'mechanics are locked by the campaign.');
+      else if (!Array.isArray(character[op.section])) errors.push(prefix + 'character section is not a list.');
       else if (character[op.section].some(v => String(v).toLowerCase() === op.value.trim().toLowerCase())) errors.push(prefix + 'duplicate entry.');
     } else if (op.op === 'replace' && op.section === 'homebrew' && HOMEBREW_FIELDS.has(op.field)) {
       // Free-form homebrew fields are editable without modifying authoritative mechanics.
