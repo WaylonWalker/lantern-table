@@ -185,3 +185,25 @@ textarea.scratch-block-content{resize:vertical;min-height:95px}
 .scratch-practical-actions{justify-content:flex-end}
 .scratch-practical-empty{color:var(--muted);margin:0;font-size:13px}
 @media(max-width:620px){.scratch-practical-grid{grid-template-columns:1fr}.scratch-builder{padding:10px}.scratch-practical-section{padding:13px}}
+
+/* Homebrewery-inspired writing desk and printable fantasy character page. */
+.brew-builder{max-width:none!important;margin:0;display:grid;gap:14px;padding:16px;background:var(--surface)}
+.brew-header{display:flex;align-items:center;justify-content:space-between;gap:18px}
+.brew-header h2{font-family:Georgia,serif;margin:4px 0;font-size:clamp(24px,3vw,36px)}
+.brew-header p{margin:0;color:var(--muted)}
+.brew-toolbar{display:flex;flex-wrap:wrap;gap:7px;padding:9px 0}
+.brew-panes{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:14px;min-height:620px}
+.brew-source,.brew-preview-wrap{display:flex;flex-direction:column;min-width:0;border:1px solid var(--line);border-radius:10px;overflow:hidden;background:#151a23}
+.brew-pane-label{font:700 11px ui-monospace,monospace;letter-spacing:.13em;padding:12px 15px;background:#252c38;color:#d5bb86}
+.brew-editor{display:block;flex:1;width:100%;min-height:600px;resize:vertical;background:#151a23!important;color:#eee9df!important;padding:23px!important;border:0!important;border-radius:0!important;line-height:1.7;font:14px/1.7 ui-monospace,SFMono-Regular,Consolas,monospace;tab-size:2}
+.brew-editor:focus-visible{outline:2px solid #c4a96d;outline-offset:-2px}
+.brew-preview-wrap{background:#202530}
+.brew-paper{flex:1;padding:44px clamp(22px,3vw,48px);background:#e7deca;color:#29251f;font:16px/1.55 Georgia,serif;overflow-wrap:anywhere;box-shadow:inset 0 0 75px #85673516}
+.brew-paper h1,.brew-paper h2,.brew-paper h3{color:#5e3027;line-height:1.2;break-after:avoid}
+.brew-paper h1{font-size:34px;text-align:center;border-bottom:3px solid #a65039;padding-bottom:12px;margin:0 0 23px}
+.brew-paper h2{font-size:23px;border-bottom:2px solid #bb8e6b;margin:26px 0 12px}
+.brew-paper h3{font-size:18px;margin:18px 0 8px}
+.brew-paper p{margin:9px 0 15px}
+.brew-paper ul{padding-left:22px}
+@media(max-width:800px){.brew-panes{grid-template-columns:1fr}.brew-editor{min-height:310px}.brew-paper{min-height:440px}.brew-header{align-items:flex-start;flex-direction:column}.brew-builder{padding:8px}}
+@media print{.brew-header,.brew-toolbar,.brew-source,.brew-pane-label,.brew-builder>.small-note{display:none!important}.brew-panes{display:block}.brew-preview-wrap{border:0}.brew-paper{background:white;box-shadow:none}}
