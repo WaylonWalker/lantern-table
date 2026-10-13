@@ -1649,6 +1649,67 @@ async def ollama_dm_events(body: dict[str, Any], model: str) -> AsyncIterator[st
         yield sse("error", {"message": f"Ollama DM stream error: {exc}"})
 
 
+@app.post("/api/homebrew/propose")
+async def api_homebrew_propose(request: Request):
+    """Draft-only character edits using the host's existing Ollama connection.
+
+    Campaign state is supplied by the caller and is never persisted in Lantern Bridge.
+    """
+    if MODE == "public":
+        raise HTTPException(503, "Connect Lantern Bridge on the host to use local homebrew AI")
+    body = await request.json()
+    if not isinstance(body, dict):
+        raise HTTPException(400, "Invalid request")
+    instruction = body.get("instruction", "")
+    if not isinstance(instruction, str) or not instruction.strip() or len(instruction) > 4000:
+        raise HTTPException(400, "Instruction must be 1-4000 characters")
+    party = body.get("party")
+    campaign = body.get("campaign")
+    character = body.get("character")
+    if not isinstance(party, list) or not isinstance(campaign, dict) or not isinstance(character, dict):
+        raise HTTPException(400, "Current party, campaign, and character are required")
+    if len(party) > 30 or len(json.dumps([party, campaign, character])) > 35000:
+        raise HTTPException(413, "Party context too large")
+    models = await ollama_models()
+    if not models:
+        raise HTTPException(503, "Connect Ollama in Lantern Bridge AI Connections first")
+    requested = body.get("model")
+    model = requested or models[0]["id"]
+    if not isinstance(model, str) or not any(m["id"] == model for m in models):
+        raise HTTPException(400, "Selected Ollama model is not installed")
+    instructions = (
+        "You are the Living Codex, a draft-only tabletop character-sheet assistant. "
+        "Use the CURRENT party, campaign settings and existing homebrew as mandatory constraints. "
+        "Do not force balance, but do require compatibility with current party rules. "
+        "Never invent unavailable game engine capabilities; describe unsupported automation. "
+        "Return only a JSON object with compatible (boolean), compatibilityReason (specific string), "
+        "and operations (array, 1-12 items). Each operation is one of: "
+        "{op:'add',section:'inventory'|'spells'|'features',value:'text'}, "
+        "{op:'replace',section:'homebrew',field:'name'|'description'|'traits'|'abilities'|'notes',value:'text'}, "
+        "or {op:'replace',section:'species'|'class'|'subclass'|'background',value:'text'}. "
+        "No deletes and no modifications to other party characters, HP, AC, level, or dice mechanics. "
+        "When the request is incompatible, return compatible:false and explain the conflict; "
+        "suggest a compatible alternative in the reason, without making changes automatically. "
+        "Organize content into its most appropriate field and preserve unrelated sheet content."
+    )
+    context = json.dumps({"instruction": instruction, "campaign": campaign, "character": character, "party": party}, ensure_ascii=False)
+    try:
+        async with httpx.AsyncClient(timeout=120, trust_env=False) as client:
+            response = await client.post(f"{OLLAMA_URL}/api/chat", json={
+                "model": model, "stream": False, "format": "json",
+                "options": {"temperature": 0.25},
+                "messages": [{"role": "system", "content": instructions},
+                             {"role": "user", "content": context}],
+            })
+        response.raise_for_status()
+        parsed = json.loads(response.json()["message"]["content"])
+    except (httpx.HTTPError, ValueError, KeyError, TypeError) as exc:
+        raise HTTPException(502, f"Local AI could not produce a valid proposal: {exc}") from exc
+    if not isinstance(parsed, dict):
+        raise HTTPException(502, "Local AI response must be an object")
+    return {"proposal": parsed}
+
+
 @app.post("/api/dm/stream")
 async def api_dm_stream(request: Request):
     if MODE == "public":
