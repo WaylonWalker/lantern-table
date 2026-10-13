@@ -1079,8 +1079,8 @@ async def ws_room(websocket: WebSocket, room: str, peer_id: str):
             signal_type = str(data.get("type", "signal"))[:32]
             payload = data.get("payload") if isinstance(data.get("payload"), dict) else {}
             target = str(data.get("target", "*"))[:96]
-            player_to_host = {"hello", "offer", "answer", "ice", "player_action", "player_intent", "character_claim", "character_patch", "snapshot_ack", "resync_request", "peer_info", "pong", "speech_ready", "speech_audio_request", "diagnostic"}
-            host_to_players = {"offer", "answer", "ice", "snapshot", "snapshot_ack_received", "canonical_event", "action_rejected", "character_patch_ack", "dm_delta", "dm_done", "dm_tool", "dice", "atmosphere", "drawing", "drawing_event", "audio_cue", "character_claimed", "peer_info", "ping", "speech_prepared", "speech_audio_chunk", "speech_start", "speech_end", "diagnostic"}
+            player_to_host = {"hello", "offer", "answer", "ice", "player_action", "player_intent", "character_claim", "character_patch", "character_import", "snapshot_ack", "resync_request", "peer_info", "pong", "speech_ready", "speech_audio_request", "diagnostic"}
+            host_to_players = {"offer", "answer", "ice", "snapshot", "snapshot_ack_received", "canonical_event", "action_rejected", "character_patch_ack", "character_import_ack", "dm_delta", "dm_done", "dm_tool", "dice", "atmosphere", "drawing", "drawing_event", "audio_cue", "character_claimed", "peer_info", "ping", "speech_prepared", "speech_audio_chunk", "speech_start", "speech_end", "diagnostic"}
             if role != "host" and (signal_type not in player_to_host or target != "host") and signal_type != "diagnostic":
                 log.warning("lantern-message-rejected room=%s role=%s peer=%s type=%s target=%s", room, role, peer_id[-8:], signal_type, target[-8:])
                 continue
