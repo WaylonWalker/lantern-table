@@ -141,3 +141,15 @@ input:disabled,textarea:disabled{opacity:.72;cursor:not-allowed}
 .homebrew-workshop-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px}
 .character-path-choices button:focus-visible,.homebrew-workshop-grid button:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
 @media(max-width:600px){.character-path-choices{grid-template-columns:1fr}.homebrew-workshop-intro{flex-direction:column}.character-path-card{padding:20px}}
+
+/* Living Codex: reviewable AI proposal panel */
+.codex-assistant{margin-block:1rem;padding:1rem;border:1px solid var(--accent,#b89361);border-radius:14px}
+.codex-assistant textarea{width:100%;min-height:5rem;margin-top:.4rem;resize:vertical}
+.codex-assistant .codex-actions{display:flex;align-items:center;gap:.65rem;flex-wrap:wrap;margin:.75rem 0}
+.codex-assistant #codexPreview{margin-top:1rem}
+.codex-assistant #codexPreview ul{padding-left:1.25rem}
+.codex-assistant #codexPreview li{padding:.65rem 0;border-bottom:1px solid var(--surface3,#444)}
+.codex-assistant .codex-before{opacity:.7;font-size:.9em;white-space:pre-wrap}
+.codex-assistant #codexPreview li div{white-space:pre-wrap;overflow-wrap:anywhere}
+.codex-assistant .codex-error{color:#e6a09a}
+.codex-assistant button:disabled{opacity:.5;cursor:not-allowed}
