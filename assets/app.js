@@ -1,4 +1,5 @@
 import * as Rules5e from './rules5e.mjs';
+import {partyRevision, validateCodexProposal, previewCodexChanges, applyCodexProposal} from './living-codex.mjs';
 import * as SceneState from './campaign-scenes.mjs';
 import * as GameSessions from './game-sessions.mjs';
 import { buildGameSessionContext } from './game-session-context.mjs';
@@ -636,7 +637,98 @@ function mountCharacterSheetTabs(){
   }
   selectTab();
 }
-function renderCharacter(){const c=currentCharacter();const hp=Math.max(0,Number(c.hp)||0),maxHp=Math.max(1,Number(c.maxHp)||1),hpPercent=Math.min(100,Math.round(hp/maxHp*100));$('characterSheetName').textContent=c.name||'Unnamed adventurer';$('characterSheetSummary').textContent=`${c.class||'Adventurer'} · Level ${c.level||1}`;$('characterStats').innerHTML=`<div class="character-stat health-stat"><span>Hit points</span><strong>${hp}<small> / ${maxHp}</small></strong><div class="health-track"><i style="width:${hpPercent}%"></i></div><em>${hpPercent}% remaining</em></div><div class="character-stat"><span>Armor class</span><strong>${esc(c.ac??'—')}</strong><em>Defense</em></div><div class="character-stat"><span>Current scene</span><strong>${esc(c.location||'Unknown')}</strong><em>Where you are</em></div>`;$('characterForm').innerHTML=`<div class="field-section"><div class="field-section-title"><span>Identity</span><small>How the table knows you</small></div><div class="form-grid two">${[['Name','name','text'],['Class / role','class','text'],['Level','level','number']].map(([label,key,type])=>`<label>${label}<input data-char="${key}" type="${type}" value="${esc(c[key]??'')}" /></label>`).join('')}</div></div><div class="field-section"><div class="field-section-title"><span>Vitals & place</span><small>Your current mechanical state</small></div><div class="form-grid two">${[['Armor class','ac','number'],['HP','hp','number'],['Max HP','maxHp','number'],['Location','location','text']].map(([label,key,type])=>`<label>${label}<input data-char="${key}" type="${type}" value="${esc(c[key]??'')}" /></label>`).join('')}</div></div><div class="field-section notes-section"><div class="field-section-title"><span>Character notes</span><small>Details worth remembering</small></div><label><textarea data-char="notes" rows="4" placeholder="Personality, goals, secrets, and reminders...">${esc(c.notes??'')}</textarea></label></div>`;$('[data-char]').forEach(x=>x.onchange=()=>editCharacter(x.dataset.char,x.value));mountCharacterSheetTabs();const portrait=getAssetUrl(c.portraitAssetId);$('portraitSlot').classList.toggle('has-image',!!portrait);$('portraitSlot').style.backgroundImage=portrait?`url("${portrait}")`:'';$('partyList').innerHTML=state.characters.map(ch=>`<div class="party-member"><div class="avatar">${esc(ch.name[0]||'?')}</div><div class="meta"><b>${esc(ch.name)}</b><small>${esc(ch.class)} · Lv ${ch.level} · ${esc(ch.location||state.scene.location)}</small></div><span>${ch.hp}/${ch.maxHp} HP</span></div>`).join('')}
+let codexPrompt = '';
+let codexDraft = null;
+let codexBusy = false;
+function codexPartyContext() {
+  return state.characters.map(c=>({
+    id:c.id,name:c.name,class:c.class,species:c.species,subclass:c.subclass,level:c.level,
+    spells:c.spells,features:c.features,inventory:c.inventory,homebrew:c.homebrew
+  }));
+}
+function mountCodexAssistant(){
+  const panel=$('character-panel-homebrew');
+  if(!panel)return;
+  const section=document.createElement('section');
+  section.className='field-section codex-assistant';
+  section.innerHTML='<div class="field-section-title"><span>✦ The Living Codex AI</span><small>Local Ollama · review before saving</small></div>'+
+    '<p>Create spells, weapons, species, classes, abilities, or reorganize your sheet. The current party and its rules are mandatory context. AI suggestions never save automatically.</p>'+
+    '<label>Ask the Codex<textarea id="codexPrompt" rows="3" maxlength="4000" placeholder="Invent a bee particle accelerator that works with our party..."></textarea></label>'+
+    '<div class="codex-actions"><button class="button" type="button" id="codexGenerate">Generate proposal</button><small id="codexStatus" aria-live="polite"></small></div>'+
+    '<div id="codexPreview" aria-live="polite"></div>';
+  panel.prepend(section);
+  const input=section.querySelector('#codexPrompt');
+  input.value=codexPrompt;
+  input.oninput=()=>{codexPrompt=input.value};
+  const generate=section.querySelector('#codexGenerate'),status=section.querySelector('#codexStatus');
+  generate.disabled=codexBusy;
+  generate.onclick=async()=>{
+    if(codexBusy)return;
+    const instruction=input.value.trim();
+    if(!instruction)return toast('Tell the Codex what to create or organize.');
+    if(!session.reachable)return toast('Connect Lantern Bridge first.');
+    if(!session.localModels?.length)return toast('Connect Ollama in AI Connections first.');
+    const character=currentCharacter();
+    const party=codexPartyContext(),revision=partyRevision(state.characters,state.campaign);
+    codexBusy=true;codexDraft=null;generate.disabled=true;status.textContent='Generating local draft…';
+    try{
+      const model=session.dmProvider==='ollama'&&session.localModels.some(m=>m.id===session.model)?session.model:session.localModels[0]?.id;
+      const response=await fetch(AI_BASE+'/api/homebrew/propose',{
+        method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({
+          instruction,model,character:party.find(c=>c.id===character.id),
+          party,campaign:{id:state.campaign.id,settings:state.campaign.settings,mechanicsLockedAt:state.campaign.mechanicsLockedAt}
+        })
+      });
+      if(!response.ok)throw Error((await response.text()).slice(0,350));
+      const {proposal}=await response.json();
+      codexDraft={proposal,revision,characterId:character.id};
+      status.textContent='Draft ready. Review all changes before approving.';
+      renderCodexPreview(section);
+    }catch(error){status.textContent='Generation failed: '+error.message}
+    finally{codexBusy=false;generate.disabled=false}
+  };
+  renderCodexPreview(section);
+}
+function renderCodexPreview(section){
+  const root=section.querySelector('#codexPreview');
+  if(!root)return;
+  if(!codexDraft){root.replaceChildren();return}
+  const {proposal,revision,characterId}=codexDraft;
+  const character=currentCharacter();
+  const match=character.id===characterId;
+  const validation=match?validateCodexProposal(proposal,character,state.characters,state.campaign,revision):{ok:false,errors:['The selected character changed. Regenerate this draft.']};
+  const explanation=String(proposal?.compatibilityReason||'No compatibility explanation supplied.');
+  const changes=match?previewCodexChanges(proposal,character):[];
+  root.innerHTML='<h4>Review proposed changes</h4>'+
+    '<p><strong>Party compatibility:</strong> '+esc(explanation)+'</p>'+
+    (validation.errors.length?'<p role="alert" class="codex-error">'+esc(validation.errors.join(' '))+'</p>':'')+
+    '<ul>'+changes.map(change=>'<li><strong>'+esc(change.action.toUpperCase()+' · '+change.path)+'</strong>'+
+    '<div class="codex-before">Before: '+esc(typeof change.before==='string'?change.before:JSON.stringify(change.before))+'</div>'+
+    '<div>After: '+esc(change.after)+'</div></li>').join('')+'</ul>'+
+    '<div class="codex-actions"><button class="button" type="button" id="codexApprove" '+(!validation.ok||rtc.role==='player'?'disabled':'')+'>Approve and save</button>'+
+    '<button class="button compact" type="button" id="codexReject">Reject draft</button></div>'+
+    (rtc.role==='player'?'<p>Only the host can apply AI-generated mechanical edits. Ask the host to review this proposal.</p>':'')+
+    '<small>AI compatibility is advisory; only supported sheet operations and campaign locks are mechanically checked.</small>';
+  root.querySelector('#codexReject').onclick=()=>{codexDraft=null;root.replaceChildren();toast('Codex draft rejected; no changes saved')};
+  root.querySelector('#codexApprove').onclick=()=>{
+    if(rtc.role==='player')return toast('Host approval required');
+    if(!confirm('Apply these reviewed changes to your character sheet?'))return;
+    try{
+      const next=applyCodexProposal(proposal,currentCharacter(),state.characters,state.campaign,revision);
+      Object.assign(currentCharacter(),next);
+      addEvent('character',currentCharacter().name+' approved Living Codex changes',{
+        actor:state.localPlayer.name,entityId:currentCharacter().entityId,
+        details:{operations:previewCodexChanges(proposal,character)}
+      });
+      codexDraft=null;
+      save();
+      render();
+      toast('Living Codex changes saved');
+    }catch(error){toast('Cannot approve: '+error.message);renderCodexPreview(section)}
+  };
+}
+function renderCharacter(){const c=currentCharacter();const hp=Math.max(0,Number(c.hp)||0),maxHp=Math.max(1,Number(c.maxHp)||1),hpPercent=Math.min(100,Math.round(hp/maxHp*100));$('characterSheetName').textContent=c.name||'Unnamed adventurer';$('characterSheetSummary').textContent=`${c.class||'Adventurer'} · Level ${c.level||1}`;$('characterStats').innerHTML=`<div class="character-stat health-stat"><span>Hit points</span><strong>${hp}<small> / ${maxHp}</small></strong><div class="health-track"><i style="width:${hpPercent}%"></i></div><em>${hpPercent}% remaining</em></div><div class="character-stat"><span>Armor class</span><strong>${esc(c.ac??'—')}</strong><em>Defense</em></div><div class="character-stat"><span>Current scene</span><strong>${esc(c.location||'Unknown')}</strong><em>Where you are</em></div>`;$('characterForm').innerHTML=`<div class="field-section"><div class="field-section-title"><span>Identity</span><small>How the table knows you</small></div><div class="form-grid two">${[['Name','name','text'],['Class / role','class','text'],['Level','level','number']].map(([label,key,type])=>`<label>${label}<input data-char="${key}" type="${type}" value="${esc(c[key]??'')}" /></label>`).join('')}</div></div><div class="field-section"><div class="field-section-title"><span>Vitals & place</span><small>Your current mechanical state</small></div><div class="form-grid two">${[['Armor class','ac','number'],['HP','hp','number'],['Max HP','maxHp','number'],['Location','location','text']].map(([label,key,type])=>`<label>${label}<input data-char="${key}" type="${type}" value="${esc(c[key]??'')}" /></label>`).join('')}</div></div><div class="field-section notes-section"><div class="field-section-title"><span>Character notes</span><small>Details worth remembering</small></div><label><textarea data-char="notes" rows="4" placeholder="Personality, goals, secrets, and reminders...">${esc(c.notes??'')}</textarea></label></div>`;$('[data-char]').forEach(x=>x.onchange=()=>editCharacter(x.dataset.char,x.value));mountCharacterSheetTabs();mountCodexAssistant();const portrait=getAssetUrl(c.portraitAssetId);$('portraitSlot').classList.toggle('has-image',!!portrait);$('portraitSlot').style.backgroundImage=portrait?`url("${portrait}")`:'';$('partyList').innerHTML=state.characters.map(ch=>`<div class="party-member"><div class="avatar">${esc(ch.name[0]||'?')}</div><div class="meta"><b>${esc(ch.name)}</b><small>${esc(ch.class)} · Lv ${ch.level} · ${esc(ch.location||state.scene.location)}</small></div><span>${ch.hp}/${ch.maxHp} HP</span></div>`).join('')}
 function renderCampaign(){const s=state.campaign.settings;const opts=(key,values)=>`<label>${key}<select data-setting="${key}">${values.map(v=>`<option ${s[key]===v?'selected':''}>${v}</option>`).join('')}</select></label>`;$('campaignSettingsForm').innerHTML=opts('difficulty',['Relaxed','Normal','Dangerous','Brutal'])+opts('rules',['Story first','Balanced','Rules strict'])+opts('dmStyle',['Helpful','Neutral','Mischievous','Ruthless'])+opts('description',['Concise','Balanced','Cinematic'])+opts('combat',['Low','Medium','High'])+opts('puzzles',['Low','Medium','High'])+opts('horror',['Low','Medium','High'])+opts('death',['Rare','Possible','Deadly'])+opts('guidance',['Lots','Balanced','Minimal'])+opts('advancement',['Milestone','XP'])+opts('characterCreation',['Quick','Guided','Full']);$$('[data-setting]').forEach(x=>x.onchange=()=>{if(!canHostEdit())return toast('Host controls campaign settings');s[x.dataset.setting]=x.value;addEvent('settings',`${x.dataset.setting} changed to ${x.value}`,{actor:'Host'});save();render()});const p=state.campaign.permissions;const dmChoices=[{id:state.localPlayer.id,name:`${state.localPlayer.name||'Host'} (host)`},...state.characters.filter(c=>c.ownerPlayerId&&c.ownerPlayerId!==state.localPlayer.id).map(c=>({id:c.ownerPlayerId,name:c.name||'Player'}))];state.campaign.dmPlayerId||=state.localPlayer.id;const pending=(state.campaign.characterChangeRequests||[]).filter(r=>r.status==='pending');$('permissionsForm').innerHTML=Object.entries({playersEditOwnCharacter:'Players may propose any character sheet changes',playersChangePortrait:'Players choose their portrait',playersDrawShared:'Players can draw/share maps',playersSuggestSettings:'Players can suggest campaign changes',playersChangeCampaign:'Players directly change campaign settings',partyControlAbsent:'Party may control absent characters',dmControlAbsent:'DM may control absent characters'}).map(([k,label])=>`<label class="toggle-row"><span><b>${label}</b></span><input data-perm="${k}" type="checkbox" ${p[k]?'checked':''} ${canHostEdit()?'':'disabled'}></label>`).join('')+`<label class="toggle-row"><span><b>Dungeon Master</b><small>Only the DM can approve the host’s character changes.</small></span><select id="dmPlayerSelect" ${canHostEdit()?'':'disabled'}>${dmChoices.map(x=>`<option value="${esc(x.id)}" ${state.campaign.dmPlayerId===x.id?'selected':''}>${esc(x.name)}</option>`).join('')}</select></label><section class="character-approval-queue"><b>Character change approvals · ${pending.length}</b>${pending.length?pending.map(r=>`<article><span><b>${esc(r.characterName)}</b> · ${esc(r.actorName)} proposes ${esc(r.path)}: ${esc(JSON.stringify(r.value))}<small>Host ${r.hostApproved?'approved':'pending'} · DM ${r.dmApproved?'approved':'pending'}</small></span>${((canHostEdit()&&!r.hostApproved)||state.localPlayer.id===state.campaign.dmPlayerId&&!r.dmApproved)?`<button class="button compact" data-approve-character="${esc(r.id)}">Approve</button><button class="button compact" data-reject-character="${esc(r.id)}">Reject</button>`:''}</article>`).join(''):'<small>No changes are waiting for approval.</small>'}</section>`;$$('[data-perm]').forEach(x=>x.onchange=()=>{p[x.dataset.perm]=x.checked;save();render()});$('dmPlayerSelect').onchange=e=>{if(!canHostEdit())return;e.stopPropagation();state.campaign.dmPlayerId=e.target.value;save();render()};$$('[data-approve-character]').forEach(x=>x.onclick=()=>reviewCharacterChange(x.dataset.approveCharacter,'approve'));$$('[data-reject-character]').forEach(x=>x.onclick=()=>reviewCharacterChange(x.dataset.rejectCharacter,'reject'));$('journal').value=state.journal}
 function renderUsage(){const u=state.campaign.aiUsage||{responses:0,inputTokens:0,outputTokens:0,totalTokens:0,byModel:{}};const fmt=n=>Number(n||0).toLocaleString();const models=Object.entries(u.byModel||{}).filter(([,v])=>v?.responses).map(([name,v])=>`<div class="usage-model"><span>${esc(name)}</span><span>${fmt(v.responses)} turns · ${fmt(v.totalTokens)} tokens</span></div>`).join('');$('campaignUsage').innerHTML=`<div class="usage-stats"><div><strong>${fmt(u.totalTokens)}</strong><span>Total tokens</span></div><div><strong>${fmt(u.inputTokens)}</strong><span>Input</span></div><div><strong>${fmt(u.outputTokens)}</strong><span>Output</span></div><div><strong>${fmt(u.responses)}</strong><span>DM turns</span></div></div>${models?`<div class="usage-models"><b>By model</b>${models}</div>`:''}<p class="small-note">Counts reported for this campaign’s DM responses. This does not show your remaining plan allowance or a dollar bill.</p>`}
 function recordCampaignUsage(model,usage={}){const input=Number(usage.input_tokens)||0,output=Number(usage.output_tokens)||0,total=Number(usage.total_tokens)||input+output;if(!total&&!input&&!output)return;const u=state.campaign.aiUsage||(state.campaign.aiUsage={responses:0,inputTokens:0,outputTokens:0,totalTokens:0,byModel:{}});u.responses=(Number(u.responses)||0)+1;u.inputTokens=(Number(u.inputTokens)||0)+input;u.outputTokens=(Number(u.outputTokens)||0)+output;u.totalTokens=(Number(u.totalTokens)||0)+total;const key=String(model||'Unknown model');const m=u.byModel[key]||(u.byModel[key]={responses:0,inputTokens:0,outputTokens:0,totalTokens:0});m.responses++;m.inputTokens+=input;m.outputTokens+=output;m.totalTokens+=total;renderUsage()}
