@@ -46,7 +46,8 @@ test('AI audio tool is structured and constrained to the catalog', async () => {
   const output = execFileSync('python', ['-c', code], { cwd: root, encoding: 'utf8' });
   const tool = JSON.parse(output);
   assert.equal(tool.parameters.additionalProperties, false);
-  assert.deepEqual(tool.parameters.required, ['action', 'cue_id', 'reason']);
+  assert.deepEqual(tool.parameters.required, ['action', 'cue_id', 'trigger_text', 'reason']);
+  assert.equal(tool.parameters.properties.trigger_text.type[0], 'string');
   const cues = tool.parameters.properties.cue_id.enum.filter(Boolean);
   assert.deepEqual(new Set(cues), new Set(catalog.sounds.map(item => item.id)));
   assert.ok(tool.parameters.properties.action.enum.includes('stop_music'));

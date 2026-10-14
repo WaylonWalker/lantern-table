@@ -970,9 +970,10 @@ def sse(event: str, data: Any) -> str:
 DM_TOOLS: list[dict[str, Any]] = [
     {
         "type": "function", "name": "speak_line",
-        "description": "Deliver one spoken line from a named, persistent character. Use the exact speaker_id from the supplied entity/character directory. Keep ordinary DM narration in the normal response. Use neutral emotion and no events for neutral lines; expression is optional and should be sparse. Never include Kitten markup in text.",
+        "description": "Deliver one spoken line from a character. For a known persistent character use its exact speaker_id and speaker_label. For an unidentified or newly encountered voice with no persistent entity ID, set speaker_id to null and give a concise descriptive speaker_label such as 'Mysterious voice from under the table'. Keep ordinary DM narration in the normal response. Use neutral emotion and no events for neutral lines; expression is optional and should be sparse. Never include Kitten markup in text.",
         "parameters": {"type": "object", "properties": {
-            "speaker_id": {"type": "string"},
+            "speaker_id": {"type": ["string", "null"]},
+            "speaker_label": {"type": "string"},
             "emotion": {"type": ["string", "null"], "enum": ["angry", "contemplative", "excited", "joyful", "mundane", "nervous", "sad", "stern", "surprised", "tender", None]},
             "energy": {"type": "number", "minimum": 0, "maximum": 1},
             "parts": {"type": "array", "minItems": 1, "maxItems": 30, "items": {"type": "object", "properties": {
@@ -980,7 +981,7 @@ DM_TOOLS: list[dict[str, Any]] = [
                 "text": {"type": "string"},
                 "event": {"type": ["string", "null"], "enum": ["gasp", "giggle", "growl", "gulp", "laugh", "pause", "scoff", "sigh", "sob", "um", None]},
             }, "required": ["type", "text", "event"], "additionalProperties": False}},
-        }, "required": ["speaker_id", "emotion", "energy", "parts"], "additionalProperties": False}, "strict": True,
+        }, "required": ["speaker_id", "speaker_label", "emotion", "energy", "parts"], "additionalProperties": False}, "strict": True,
     },
     {
         "type": "function",
@@ -1073,12 +1074,13 @@ DM_TOOLS: list[dict[str, Any]] = [
     },
     {
         "type": "function", "name": "play_audio",
-        "description": "Request a restrained catalog sound cue for a meaningful story beat. Use only a cue ID from the supplied allow-list. Narration must still describe what happens. Do not play routine movement or every weapon action; do not repeat the current music or ambience. Use stop actions when a scene clearly ends.",
+        "description": "Play a catalog sound cue when the narration establishes a distinct, audible story event with a matching cue, especially deliberate knocks, doors opening/closing/creaking, a lock clicking, or a major impact. Make the play_audio call in the same response as the narration. For play_sfx, set trigger_text to the exact short word or phrase in the narration where the sound should occur (for example, 'knocks three times'). Use only a cue ID from the supplied allow-list. Narration must still describe what happens. Do not play routine movement or every weapon action; do not repeat the current music or ambience. Use stop actions when a scene clearly ends.",
         "parameters": {"type": "object", "properties": {
             "action": {"type": "string", "enum": ["play_sfx", "set_ambience", "set_music", "stop_ambience", "stop_music"]},
             "cue_id": {"type": ["string", "null"], "enum": ["door.knock.light", "door.knock.heavy", "door.open", "door.close", "door.creak", "gate.open", "chest.open", "chest.close", "weapon.draw", "weapon.swing", "impact.chop", "metal.clank", "metal.shield", "coins.handle", "coins.drop", "book.open", "book.page", "book.close", "gear.cloth", "gear.leather", "footsteps.stone", "footsteps.wood", "footsteps.dirt", "footsteps.gravel", "lock.click", "ambience.forest", "ambience.dungeon", "ambience.cavern", "music.battle", "music.town", "music.tavern", None]},
+            "trigger_text": {"type": ["string", "null"], "description": "For play_sfx, exact short text from narration at the event; null for non-SFX actions."},
             "reason": {"type": "string"}
-        }, "required": ["action", "cue_id", "reason"], "additionalProperties": False}, "strict": True,
+        }, "required": ["action", "cue_id", "trigger_text", "reason"], "additionalProperties": False}, "strict": True,
     },
     {
         "type": "function", "name": "suggest_visual_prompt",
@@ -1672,7 +1674,7 @@ def dm_instructions(body: dict[str, Any]) -> str:
 
 PLAY STYLE
 - Write the spoken/narrated part of every turn as clean Markdown. Use short headings, emphasis, blockquotes, lists, and tables only when they improve playability.
-- For dialogue spoken by a named persistent NPC, call speak_line with that character's exact supplied speaker_id. Keep the dialogue text in the speech parts and out of the surrounding Markdown so it appears only once in the transcript. Use one call per distinct speaker line; do not turn incidental quoted text or player speech into actor lines.
+- For dialogue spoken by a known persistent NPC, call speak_line with that character's exact supplied speaker_id and name as speaker_label. For an unidentified or newly encountered voice without a persistent entity ID, call speak_line with speaker_id=null and a concise descriptive speaker_label (for example, 'Mysterious voice from under the table'). Keep dialogue text in speech parts and out of Markdown so it appears only once. Use one call per distinct speaker line; do not turn incidental quoted text or player speech into actor lines.
 - Speech parts are semantic data: text parts carry words, emphasis parts mark only a short stressed phrase, and event parts carry one supported vocal event. Leave emotion null for neutral dialogue. Use emotion, energy, vocal events, and emphasis sparingly and only when the fiction supports them. Never write Kitten tags or markup in Markdown.
 - Be vivid but interactive: usually 2-6 short paragraphs. Never decide a player character's thoughts, dialogue, or choices.
 - Treat each player message as an attempted action, not as authority over the world. The player controls their character's intent; you adjudicate whether it is possible, what it costs, what roll or resource is required, and what happens. Do not grant success merely because the player states an outcome.
@@ -1693,7 +1695,8 @@ PLAY STYLE
 - If the engine rejects an intent, explain the constraint and ask for another action; never narrate rejected mechanics as successful.
 - Characters may control only their own PC. Do not control an absent PC unless the campaign's partyControlAbsent or dmControlAbsent permission explicitly allows delegation; any delegated intent still goes through host validation.
 - Use set_character_mechanics only to establish initial sheet mechanics before play begins. propose_state_patch is narrative metadata only and cannot change HP or other mechanics.
-- Audio cues are available through the structured play_audio tool. Use them only for meaningful moments, such as a deliberate knock, a major impact, a scene ambience change, or combat beginning. Never narrate onomatopoeia instead of describing the event; the text must remain useful without sound. Avoid cues for routine steps, ordinary weapon handling, or every action. Let ambience persist through a scene and do not change music every turn. Combat music requires actual danger or combat, not a mention of a weapon. Use only exact catalog IDs listed below; never invent an ID or URL. A human DM may disable AI audio at any time.
+- AUDIO CUE RULE: When your narration establishes a distinct audible event that has a matching catalog cue, call play_audio in the same response. This includes deliberate knocks (door.knock.light or door.knock.heavy), doors opening/closing/creaking, locks clicking, and major impacts. For play_sfx, set trigger_text to the exact short word or phrase in your narration where it should sound. For example, narration that says something “knocks three times” should call play_audio with action="play_sfx", cue_id="door.knock.light", trigger_text="knocks three times", and a reason. For repeated instances of the same event in one beat, one cue is enough. Do not wait for the player to ask for sound. Keep the written description complete and useful without audio. Do not cue routine movement, ordinary weapon handling, or every action. Let ambience persist through a scene and do not repeat current music or ambience. Combat music requires actual danger or combat, not a mention of a weapon. Use only exact catalog IDs listed below; never invent an ID or URL. A human DM may disable AI audio at any time.
+- MUSIC AND AMBIENCE: At the opening of a scene, choose a fitting catalog ambience or music track when one clearly suits the established location and mood. When the party enters a materially different place, or the scene's established mood changes substantially, update the fitting track in that response. Keep suitable tracks running across ordinary turns; do not restart or swap them every turn. Use stop actions when the fiction clearly leaves no fitting track. Choose only supplied catalog IDs, and never let sound establish a fact the scene has not established.
 - When a meaningful person should persist, check the known entity list and use create_entity. The host assigns IDs and records first meeting; do not invent entity IDs.
 - Treat local host state as authoritative.
 

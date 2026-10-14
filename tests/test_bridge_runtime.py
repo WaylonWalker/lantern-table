@@ -147,7 +147,8 @@ class TestBridgeRuntime(unittest.IsolatedAsyncioTestCase):
         self.assertIn("stern",props["emotion"]["enum"])
         self.assertIn("sigh",props["parts"]["items"]["properties"]["event"]["enum"])
         instructions=bridge.dm_instructions({"campaign":"Test table","campaign_settings":{}})
-        self.assertIn("For dialogue spoken by a named persistent NPC, call speak_line",instructions)
+        self.assertIn("For dialogue spoken by a known persistent NPC, call speak_line",instructions)
+        self.assertIn("speaker_id=null",instructions)
         self.assertIn("Never write Kitten tags or markup in Markdown",instructions)
 
     async def test_kitten_preview_text_and_semantic_speech_share_runtime_endpoint(self):
