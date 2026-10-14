@@ -161,7 +161,7 @@ just companion
 
 The companion can also use the host's signed-in Codex CLI as the DM provider. Install Codex CLI, run `codex login` on the host, then choose **Codex CLI** in AI Connections. It uses the CLI's configured model by default, with an optional model override. Codex is launched ephemerally from an empty temporary directory with shell, browser, computer, and app tools disabled; Lantern game actions are returned through the same structured tool flow as other providers.
 
-DM narration can use KittenTTS 2 or the lightweight Kitten Mini, Micro, and Nano models from **Settings → Narration**. Lightweight models download on first selection and run in a separate host-local worker; character dialogue continues to use KittenTTS 2. Nano is the smallest option, while browser System narrator remains available for minimal synthesis delay.
+DM narration can use KittenTTS 2 or the lightweight Kitten Mini, Micro, and Nano models from **Settings → Narration**. Named character dialogue has a separate engine selector under **Settings → Character voices**. Choose KittenTTS 2 for expressive acting, or Mini, Micro, and Nano for faster plain delivery. The fast models download on first selection and run in a host-local worker. Nano is the smallest option, while browser System narrator remains available for minimal narration delay.
 
 or:
 

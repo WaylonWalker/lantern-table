@@ -43,15 +43,17 @@ test('persistent NPC creation assigns its runtime-catalogue voice immediately wh
 test('settings separate default Kitten character acting from optional narration engines',async()=>{
   const [app,html]=await Promise.all([readFile(new URL('../assets/app.js',import.meta.url),'utf8'),readFile(new URL('../dnd_localfirst_demo.html',import.meta.url),'utf8')]);
   assert.match(html,/Character voices/);
-  assert.match(html,/Named character dialogue uses each character’s assigned KittenTTS 2 voice by default/);
+  assert.match(html,/Character voice engine<select id="actorVoiceEngine"/);
+  assert.match(html,/Choose one host-local engine for all named character dialogue/);
   assert.match(html,/Narration engine<select id="voiceMode"/);
   assert.match(html,/KittenTTS 2 · host-local · recommended/);
   assert.match(html,/Off · character dialogue still speaks/);
   assert.match(html,/Kokoro fallback settings and diagnostics/);
-  assert.match(app,/requested='kitten2'/);
+  assert.match(app,/requested=state\.audio\.actorEngine\|\|'kitten2'/);
+  assert.match(app,/model:requested,voice:voice\.voice_id,energy:message\.speech\.energy,preset:'stable'/);
   assert.match(app,/performanceSpeech/);
-  assert.match(app,/Named characters keep their assigned KittenTTS 2 voices/);
-  assert.match(app,/audio:\{mode:'kitten2'/);
+  assert.match(app,/switchActorVoiceEngine\(engine\)/);
+  assert.match(app,/audio:\{mode:'kitten2',actorEngine:'kitten2'/);
   assert.match(app,/storedCampaign\?\.audio\?\.mode==='kokoro'/);
   assert.match(app,/speakKittenNarrator\(text,epoch/);
   assert.match(app,/KittenTTS failed; trying Kokoro narrator/);
