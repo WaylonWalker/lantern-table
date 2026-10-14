@@ -20,7 +20,7 @@ test('voice assignment uses the runtime catalogue and prefers unused voices',()=
 
 test('replay playback state is attached to the one visible transcript message node',async()=>{
   const [app,html,worker]=await Promise.all([readFile(new URL('../assets/app.js',import.meta.url),'utf8'),readFile(new URL('../dnd_localfirst_demo.html',import.meta.url),'utf8'),readFile(new URL('../assets/kitten_worker.py',import.meta.url),'utf8')]);
-  assert.equal((html.match(/id="narrationFollower"/g)||[]).length,0);
+  assert.equal((html.match(/id="narrationFollower"/g)||[]).length,1);
   assert.match(app,/card\.dataset\.utteranceId=m\.utterance_id\|\|m\.id/);
   assert.match(app,/card\.classList\.toggle\('is-speaking',activeTranscriptMessageId===m\.id\)/);
   assert.match(app,/activeTranscriptMessageId=message\.id;renderTranscript\(\)/);
@@ -74,6 +74,14 @@ test('Kitten narration speed adjusts playback scheduling and word-follow timing 
   assert.match(app,/const playDuration=buffer\.duration\/playbackRate/);
   assert.match(app,/duration=playDuration\*1000/);
   assert.match(worker,/model\.generate\("Ready when you are\."/);
+});
+
+test('Kitten narration highlights the spoken word in the play view follower',async()=>{
+  const [app,html]=await Promise.all([readFile(new URL('../assets/app.js',import.meta.url),'utf8'),readFile(new URL('../dnd_localfirst_demo.html',import.meta.url),'utf8')]);
+  assert.match(html,/id="narrationFollower"/);
+  assert.match(app,/function showNarrationFollower\(text='?'?\).*narrationFollowerWords=\[\.\.\.String\(text\)\.matchAll/);
+  assert.match(app,/highlightWordIn\(follower,charIndex\)/);
+  assert.match(app,/playKokoroAudio\(decoded\.getChannelData\(0\),decoded\.sampleRate,epoch,text,0,text\.length/);
 });
 
 test('DM stream errors and incomplete completions are surfaced instead of silently discarded',async()=>{
