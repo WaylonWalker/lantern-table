@@ -35,12 +35,13 @@ SPEC.loader.exec_module(bridge)
 
 
 class Response:
-    def __init__(self, data=None, status_code=200, text=""):
+    def __init__(self, data=None, status_code=200, text="", headers=None):
         self.data = data or {}
         self.status_code = status_code
         self.is_success = status_code < 400
         self.is_error = status_code >= 400
         self.text = text
+        self.headers = headers or {}
 
     def json(self):
         return self.data
@@ -69,6 +70,35 @@ class TestBridgeRuntime(unittest.IsolatedAsyncioTestCase):
         response={"output":[{"type":"message","content":[{"type":"output_text","text":"The cellar door opens."}]}]}
         self.assertEqual(bridge.response_output_text(response),"The cellar door opens.")
         self.assertEqual(bridge.response_output_text({"output":[]}),"")
+
+    async def test_model_discovery_retries_http_520_and_hides_upstream_html(self):
+        class FakeClient:
+            attempts = 0
+            responses = [
+                Response(status_code=520, text="<!DOCTYPE html><title>520 error</title>"),
+                Response(data={"models": [{"slug": "gpt-test"}]}),
+            ]
+            def __init__(self, *args, **kwargs): pass
+            async def __aenter__(self): return self
+            async def __aexit__(self, *args): return None
+            async def get(self, *args, **kwargs):
+                type(self).attempts += 1
+                return self.responses.pop(0)
+
+        with patch.object(bridge.httpx, "AsyncClient", FakeClient), patch.object(bridge.asyncio, "sleep", new=AsyncMock()):
+            models = await bridge.list_models({"access_token": "test-token"})
+        self.assertEqual(models, [{"slug": "gpt-test", "display_name": "gpt-test"}])
+        self.assertEqual(FakeClient.attempts, 2)
+
+        FakeClient.responses = [Response(status_code=520, text="<!DOCTYPE html><title>520 error</title>") for _ in range(3)]
+        FakeClient.attempts = 0
+        with patch.object(bridge.httpx, "AsyncClient", FakeClient), patch.object(bridge.asyncio, "sleep", new=AsyncMock()):
+            with self.assertRaises(HTTPException) as raised:
+                await bridge.list_models({"access_token": "test-token"})
+        self.assertEqual(raised.exception.status_code, 520)
+        self.assertIn("after 3 attempts", raised.exception.detail)
+        self.assertNotIn("<!DOCTYPE html>", raised.exception.detail)
+        self.assertEqual(FakeClient.attempts, 3)
 
     async def asyncTearDown(self):
         await self.client.aclose()
@@ -128,7 +158,10 @@ class TestBridgeRuntime(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.status_code,200)
         self.assertEqual(response.content,audio)
         self.assertEqual(response.headers["X-Kitten-Expression-Mode"],"inline-markup")
-        synth.assert_awaited_once_with({"text":"Preview this voice.","voice":"Victor","energy":0.8,"preset":"stable"})
+        synth.assert_awaited_once()
+        worker_payload=synth.await_args.args[0]
+        self.assertEqual({key:value for key,value in worker_payload.items() if key!="correlation_id"},{"text":"Preview this voice.","voice":"Victor","energy":0.8,"preset":"stable"})
+        self.assertTrue(worker_payload["correlation_id"])
 
     async def test_kitten_preset_defaults_to_stable_for_narration_and_expressive_for_actor_speech(self):
         audio=b"RIFF-test-wave"
@@ -323,28 +356,38 @@ class TestBridgeRuntime(unittest.IsolatedAsyncioTestCase):
         captured = {}
 
         class StreamResponse(Response):
+            def __init__(self, status_code=200, text=""):
+                super().__init__(status_code=status_code, text=text)
+                self.lines = ["data: " + json.dumps({"type": "response.completed", "response": {"usage": {"input_tokens": 2, "output_tokens": 1}, "output": []}})]
             async def aiter_lines(self):
-                yield "data: " + json.dumps({"type": "response.completed", "response": {"usage": {"input_tokens": 2, "output_tokens": 1}, "output": []}})
+                for line in self.lines:
+                    yield line
 
         class StreamContext:
-            async def __aenter__(self): return StreamResponse()
+            def __init__(self, response): self.response=response
+            async def __aenter__(self): return self.response
             async def __aexit__(self, *args): return None
 
         class FakeClient:
+            attempts = 0
             def __init__(self, *args, **kwargs): pass
             async def __aenter__(self): return self
             async def __aexit__(self, *args): return None
             def stream(self, method, url, **kwargs):
+                type(self).attempts += 1
                 captured.update(method=method, url=url, payload=kwargs["json"])
-                return StreamContext()
+                response = StreamResponse(status_code=520, text="<!DOCTYPE html><title>520 error</title>") if type(self).attempts == 1 else StreamResponse()
+                return StreamContext(response)
 
         request = SimpleNamespace(json=AsyncMock(return_value={"messages": []}))
-        with patch.object(bridge, "auth_creds", new=AsyncMock(return_value={"access_token": "test-token"})), patch.object(bridge, "choose_model", new=AsyncMock(return_value="gpt-test")), patch.object(bridge.httpx, "AsyncClient", FakeClient):
+        with patch.object(bridge, "auth_creds", new=AsyncMock(return_value={"access_token": "test-token"})), patch.object(bridge, "choose_model", new=AsyncMock(return_value="gpt-test")), patch.object(bridge.httpx, "AsyncClient", FakeClient), patch.object(bridge.asyncio, "sleep", new=AsyncMock()):
             response = await bridge.api_dm_stream(request)
-            _ = [part async for part in response.body_iterator]
+            parts = [part async for part in response.body_iterator]
         self.assertEqual(captured["url"], f"{bridge.RESOURCE}/responses")
         self.assertEqual(captured["payload"]["store"], False)
         self.assertEqual(captured["payload"]["stream"], True)
+        self.assertEqual(FakeClient.attempts, 2)
+        self.assertTrue(any('event: done' in part for part in parts))
 
 
 if __name__ == "__main__":

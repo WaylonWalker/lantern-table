@@ -54,7 +54,7 @@ test('settings separate default Kitten character acting from optional narration 
   assert.match(app,/audio:\{mode:'kitten2'/);
   assert.match(app,/storedCampaign\?\.audio\?\.mode==='kokoro'/);
   assert.match(app,/speakKittenNarrator\(text,epoch/);
-  assert.match(app,/KittenTTS 2 failed; trying Kokoro narrator/);
+  assert.match(app,/KittenTTS failed; trying Kokoro narrator/);
   assert.match(html,/id="kittenNarratorVoice"/);
 });
 
@@ -78,9 +78,10 @@ test('Kitten narration speed adjusts playback scheduling and word-follow timing 
 
 test('DM stream errors and incomplete completions are surfaced instead of silently discarded',async()=>{
   const [app,bridge]=await Promise.all([readFile(new URL('../assets/app.js',import.meta.url),'utf8'),readFile(new URL('../dnd_chatgpt_server.py',import.meta.url),'utf8')]);
-  assert.match(app,/if\(event==='error'\)throw Error\(payload\.message\|\|/);
-  assert.match(app,/if\(!completed\)throw Error\('The DM response stream ended before completion/);
+  assert.match(app,/if\(event==='error'\)\{const error=Error\(payload\.message\|\|'The DM response failed'\);error\.failureKind=Number\.isInteger\(payload\.status\)\?/);
+  assert.match(app,/if\(!completed\)\{const error=Error\('The DM response stream ended before completion/);
   assert.match(app,/The DM completed without returning narration/);
   assert.match(app,/Lantern could not get a complete DM response/);
+  assert.match(app,/faro\.api\.pushLog\(\['dm_response_failed provider='/);
   assert.match(bridge,/if final_text and not streamed_text:/);
 });

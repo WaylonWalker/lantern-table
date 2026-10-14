@@ -1,0 +1,6 @@
+[tools]
+# Local runtimes discovered by Lantern Bridge. `just companion` installs these
+# on demand and launches the Bridge with their mise-managed binaries on PATH.
+ollama = "latest"
+"llama.cpp" = "latest"
+"github:leejet/stable-diffusion.cpp" = "latest"

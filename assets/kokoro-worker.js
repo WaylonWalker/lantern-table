@@ -8,8 +8,8 @@ let loadPromise = null;
 let lastProgress = -1;
 const cancelledRequests = new Set();
 
-function postError(id, error) {
-  self.postMessage({ id, type: 'error', message: error?.message || String(error) });
+function postError(id, error, correlationId = null) {
+  self.postMessage({ id, correlationId, type: 'error', message: error?.message || String(error) });
 }
 
 async function load(device, modelDtype) {
@@ -46,12 +46,13 @@ async function load(device, modelDtype) {
 }
 
 self.onmessage = async ({ data }) => {
-  const { id, type } = data;
+  const { id, type, correlationId = null } = data;
   if (type === 'cancel') { cancelledRequests.add(data.requestId); return; }
   try {
     if (type === 'load') {
+      const loadStarted = performance.now();
       const result = await load(data.device, data.dtype);
-      self.postMessage({ id, type: 'result', ...result });
+      self.postMessage({ id, type: 'result', correlationId, loadMs: performance.now() - loadStarted, ...result });
       return;
     }
     if (type === 'generate') {
@@ -60,22 +61,24 @@ self.onmessage = async ({ data }) => {
       for (let index = 0; index < chunks.length; index++) {
         if (cancelledRequests.has(id)) break;
         const text = chunks[index];
-        self.postMessage({ id, type: 'progress', phase: 'generate', text: `Generating passage ${index + 1} of ${chunks.length} (${backend})…` });
+        self.postMessage({ id, type: 'progress', correlationId, phase: 'generate', text: `Generating passage ${index + 1} of ${chunks.length} (${backend})…` });
+        const generationStarted = performance.now();
         const audio = await tts.generate(text, { voice: data.voice, speed: data.speed });
+        const inferenceMs = performance.now() - generationStarted;
         if (cancelledRequests.has(id)) break;
         if (!audio.audio || !audio.sampling_rate) throw Error('Kokoro returned no PCM audio');
         const samples = audio.audio instanceof Float32Array ? audio.audio.slice() : new Float32Array(audio.audio);
         const pcm = inspectPcm(samples);
         if (!pcm.valid) throw Error(`PCM validation failed for passage ${index + 1}: finite ratio ${pcm.finiteRatio.toFixed(5)}, peak ${pcm.peak.toFixed(6)}, RMS ${pcm.rms.toFixed(6)}`);
         const samplesBuffer = samples.buffer;
-        self.postMessage({ id, type: 'chunk', text, index, total: chunks.length, backend, samples: samplesBuffer, samplingRate: audio.sampling_rate }, [samplesBuffer]);
+        self.postMessage({ id, type: 'chunk', correlationId, text, index, total: chunks.length, backend, inferenceMs, audioDurationMs: samples.length / audio.sampling_rate * 1000, samples: samplesBuffer, samplingRate: audio.sampling_rate }, [samplesBuffer]);
       }
       if (cancelledRequests.delete(id)) return;
-      self.postMessage({ id, type: 'result', backend, dtype, chunks: chunks.length });
+      self.postMessage({ id, type: 'result', correlationId, backend, dtype, chunks: chunks.length });
       return;
     }
     throw Error(`Unknown Kokoro worker request: ${type}`);
   } catch (error) {
-    postError(id, error);
+    postError(id, error, correlationId);
   }
 };

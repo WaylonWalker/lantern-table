@@ -20,7 +20,10 @@ image:
 
 # Run the host-side OAuth/AI companion locally.
 companion:
-    LANTERN_MODE=companion ./dnd_chatgpt_server.py
+    #!/usr/bin/env bash
+    set -euo pipefail
+    mise install
+    mise exec -- env LANTERN_MODE=companion ./dnd_chatgpt_server.py
 
 # Run a hot-reloading, single-player local app with the companion enabled.
 serve:
@@ -153,6 +156,12 @@ ui-audit:
 # Capture the public app without submitting changes or creating user data.
 ui-audit-prod:
     UI_AUDIT_BASE_URL=https://dnd.waylonwalker.com/ uv run --script scripts/ui_audit.py
+
+# Run repeatable synthetic TTS benchmarks and write local-only results to artifacts/tts-audit.
+tts-audit:
+    python scripts/tts_audit.py
+    uv run --quiet --with kittenml --python 3.12 scripts/tts_audit_models.py
+    if [[ -n "${LANTERN_KITTEN_CPP_BIN:-}" ]]; then python scripts/tts_audit_cpp.py; fi
 
 # Compare the two latest audit manifests and journey outcomes.
 ui-audit-compare:
