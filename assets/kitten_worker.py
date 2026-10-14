@@ -67,6 +67,10 @@ def main() -> int:
                 model = KittenTTS(args.model, weights=args.weights) if args.model == "KittenML/kitten-tts-2" else KittenTTS(args.model)
                 model_init_ms = round((time.perf_counter_ns() - started) / 1e6, 3)
                 load_ms = model_init_ms
+            # KittenTTS 2 exposes this on its model object. The lightweight
+            # ONNX models do not, and KittenML's generate_to_file API defaults
+            # those models to 24 kHz.
+            sample_rate = int(getattr(model, "sample_rate", 24000))
             # Report the device selected by KittenTTS itself. CUDA availability is
             # useful context, but does not establish where model inference runs.
             actual_device = str(getattr(model, "device", "unknown"))
@@ -90,7 +94,7 @@ def main() -> int:
                 warmup_ms = round((time.perf_counter_ns() - warmup_started) / 1e6, 3)
                 warmup_error = f"{type(exc).__name__}: {exc}"
         audit("worker_ready", startup_ms=round((time.perf_counter_ns()-process_started)/1e6, 3), model_download_ms=download_ms, model_init_ms=model_init_ms, model_load_ms=load_ms, warmup_ms=warmup_ms, cuda_available=torch.cuda.is_available(), device=actual_device, weights=args.weights, torch_threads=torch.get_num_threads(), torch_interop_threads=torch.get_num_interop_threads())
-        emit({"ready": True, "voices": list(model.available_voices), "model": args.model, "weights": args.weights if args.model == "KittenML/kitten-tts-2" else None, "device": actual_device, "cuda_available": torch.cuda.is_available(), "model_download_ms": download_ms, "model_init_ms": model_init_ms, "load_ms": load_ms, "warmup_ms": warmup_ms, "warmup_error": warmup_error, "torch_threads": torch.get_num_threads(), "torch_interop_threads": torch.get_num_interop_threads(), "sample_rate": int(model.sample_rate), "expression_mode": "expressive-preset" if supports_preset else "plain", "supports_energy_speed": supports_speed})
+        emit({"ready": True, "voices": list(model.available_voices), "model": args.model, "weights": args.weights if args.model == "KittenML/kitten-tts-2" else None, "device": actual_device, "cuda_available": torch.cuda.is_available(), "model_download_ms": download_ms, "model_init_ms": model_init_ms, "load_ms": load_ms, "warmup_ms": warmup_ms, "warmup_error": warmup_error, "torch_threads": torch.get_num_threads(), "torch_interop_threads": torch.get_num_interop_threads(), "sample_rate": sample_rate, "expression_mode": "expressive-preset" if supports_preset else "plain", "supports_energy_speed": supports_speed})
     except Exception as exc:
         emit({"ready": False, "error": f"{type(exc).__name__}: {exc}"})
         return 1
@@ -124,15 +128,15 @@ def main() -> int:
             with wave.open(wav, "wb") as output:
                 output.setnchannels(1)
                 output.setsampwidth(2)
-                output.setframerate(int(model.sample_rate))
+                output.setframerate(sample_rate)
                 output.writeframes((clipped * 32767).astype("<i2").tobytes())
             wav_bytes = wav.getvalue()
             wav_ms = round((time.perf_counter_ns()-wav_started)/1e6, 3)
             b64_started = time.perf_counter_ns()
             audio_b64 = base64.b64encode(wav_bytes).decode("ascii")
             b64_ms = round((time.perf_counter_ns()-b64_started)/1e6, 3)
-            emit({"ok": True, "correlation_id": correlation_id, "audio_b64": audio_b64, "generation_ms": generation_ms, "wav_encode_ms": wav_ms, "base64_encode_ms": b64_ms, "wav_bytes": len(wav_bytes), "audio_duration_ms": round(len(audio) / model.sample_rate * 1000), "sample_rate": int(model.sample_rate), "device": actual_device, "speed": round(speed, 3), "preset": preset})
-            audit("inference_complete", correlation_id=correlation_id, characters=len(text), inference_ms=generation_ms, wav_encode_ms=wav_ms, base64_encode_ms=b64_ms, wav_bytes=len(wav_bytes), audio_duration_ms=round(len(audio) / model.sample_rate * 1000), device=actual_device)
+            emit({"ok": True, "correlation_id": correlation_id, "audio_b64": audio_b64, "generation_ms": generation_ms, "wav_encode_ms": wav_ms, "base64_encode_ms": b64_ms, "wav_bytes": len(wav_bytes), "audio_duration_ms": round(len(audio) / sample_rate * 1000), "sample_rate": sample_rate, "device": actual_device, "speed": round(speed, 3), "preset": preset})
+            audit("inference_complete", correlation_id=correlation_id, characters=len(text), inference_ms=generation_ms, wav_encode_ms=wav_ms, base64_encode_ms=b64_ms, wav_bytes=len(wav_bytes), audio_duration_ms=round(len(audio) / sample_rate * 1000), device=actual_device)
         except Exception as exc:
             emit({"ok": False, "error": f"{type(exc).__name__}: {exc}"})
     return 0
