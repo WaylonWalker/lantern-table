@@ -1633,5 +1633,46 @@ function renderCharacterFull(){
   $$('[data-char-path]').forEach(x=>x.onchange=()=>editCharacterPath(x.dataset.charPath,x.type==='checkbox'?x.checked:x.value,x.dataset.charType||'text'));$$('[data-char-list]').forEach(x=>x.onchange=()=>editCharacterList(x.dataset.charList,x.value));$$('[data-roll-ability]').forEach(x=>x.onclick=()=>rollAbility(x.dataset.rollAbility,x.dataset.rollLabel));mountCharacterSheetTabs();enhanceHomebrewWorkshop();renderScratchCharacter();const portrait=getAssetUrl(c.portraitAssetId);$('portraitSlot').classList.toggle('has-image',!!portrait);$('portraitSlot').style.backgroundImage=portrait?`url("${portrait}")`:'';$('partyList').innerHTML=state.characters.map(ch=>`<div class="party-member"><div class="avatar">${esc(ch.name[0]||'?')}</div><div class="meta"><b>${esc(ch.name)}</b><small>${esc(ch.class)} · Lv ${ch.level} · ${esc(ch.location||state.scene.location)}</small></div><span>${ch.hp}/${ch.maxHp} HP</span></div>`).join('')}
 renderCharacter=renderCharacterFull;
 
+/* The Living Codex is a visual editor; character mechanics stay in the host rules engine. */
+let codexFrame=null;
+function openLivingCodex(){
+  if(document.getElementById('livingCodexOverlay'))return;
+  const character=currentCharacter();
+  if(!character)return;
+  const overlay=document.createElement('div');
+  overlay.id='livingCodexOverlay';
+  overlay.className='living-codex-overlay';
+  overlay.innerHTML='<div class="living-codex-topbar"><strong>📖 The Living Codex</strong><span>Freeform character journal · saves with this character</span><button type="button" id="closeLivingCodex" class="button compact">Close book ✕</button></div><iframe id="livingCodexFrame" title="The Living Codex character editor" src="/assets/living-codex.html"></iframe>';
+  document.body.append(overlay);
+  codexFrame=overlay.querySelector('iframe');
+  overlay.querySelector('#closeLivingCodex').onclick=()=>{overlay.remove();codexFrame=null};
+}
+window.addEventListener('message',event=>{
+  if(event.origin!==location.origin||!codexFrame||event.source!==codexFrame.contentWindow)return;
+  const message=event.data;
+  if(message?.type==='lantern-codex-ready'){
+    const character=currentCharacter();
+    codexFrame.contentWindow.postMessage({type:'lantern-codex-load',book:character.codex||null,name:character.name||'Unnamed adventurer'},location.origin);
+  }
+  if(message?.type==='lantern-codex-save'){
+    if(rtc.role==='player'||!canHostEdit())return;
+    if(!message.book||!Array.isArray(message.book.tabs)||JSON.stringify(message.book).length>500000)return;
+    currentCharacter().codex=message.book;
+    save();
+  }
+});
+function mountLivingCodexButton(){
+  const header=$('view-character')?.querySelector('.view-heading');
+  if(!header||header.querySelector('#openLivingCodex'))return;
+  const button=document.createElement('button');
+  button.type='button';button.id='openLivingCodex';button.className='button primary';
+  button.textContent='📖 Open Living Codex';
+  button.onclick=openLivingCodex;
+  header.append(button);
+}
+const previousRenderCharacter=renderCharacter;
+renderCharacter=function(...args){const result=previousRenderCharacter(...args);mountLivingCodexButton();return result};
+
+
 // Startup ------------------------------------------------------------------------
 (async()=>{try{const response=await fetch('/assets/audio/catalog.json?v=starter-cc0-1',{cache:'force-cache'});if(!response.ok)throw Error(`Catalog request failed: ${response.status}`);const catalog=await response.json();validateCatalog(catalog);audioCatalog=catalog.sounds;audioEngine=new TableAudio(audioCatalog,()=>state.audio,needed=>{$('audioUnlock').classList.toggle('hidden',!needed)});audioEngine.preloadSfx(state.audio.quick);audioEngine.syncState(state.sharedAudio)}catch(error){console.warn('[Lantern audio] catalog unavailable',error)}initWizard();initDraw();initDictation();setInterval(()=>{if(rtc.role!=='player'&&!session.connected&&!session.checking)probeCompanion(false)},15000);await loadAssetUrls().catch(()=>{});await bootConfig();if(joinIntent){rtc.role='player';rtc.room=joinIntent;state.multiplayer.role='player';state.multiplayer.lastRoom=joinIntent;render();applyAtmosphere(state.atmosphere,{silent:true});document.documentElement.classList.remove('booting');setTimeout(()=>rtc.join(joinIntent),120);return}persistCampaignSnapshot();render();refreshKittenVoices();setInterval(()=>{if(kittenStatus.state==='starting'&&rtc.role!=='player')refreshKittenVoices()},5000);applyAtmosphere(state.atmosphere,{silent:true});document.documentElement.classList.remove('booting');if(historicalSessionId){showView('session-history')}else if(initialHash.get('campaign')){showView('campaign')}if(state.campaign.started&&state.multiplayer.lastRoom&&appConfig.signaling){const previousRole=state.multiplayer.role;if(previousRole==='host'){setTimeout(()=>rtc.startHost(state.multiplayer.lastRoom),350);setTimeout(()=>startDMOpening(),750)}else if(previousRole==='player')setTimeout(()=>rtc.join(state.multiplayer.lastRoom),500)}else if(state.campaign.started&&state.multiplayer.role!=='player'){setTimeout(()=>startDMOpening(),450)}})();

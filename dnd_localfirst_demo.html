@@ -9,7 +9,13 @@
 <link rel="stylesheet" href="/assets/app.css?v=glow-pointer-1" />
 <link rel="stylesheet" href="/assets/dnd-fx.css" />
 <script>setTimeout(()=>document.documentElement.classList.remove('booting'),1800)</script>
-</head>
+<style>
+.living-codex-overlay{position:fixed;inset:0;z-index:9999;background:#16151e;display:flex;flex-direction:column}
+.living-codex-topbar{display:flex;gap:1rem;align-items:center;justify-content:space-between;padding:.55rem 1rem;background:#241d2a;color:#f7e6c2;font:14px system-ui}
+.living-codex-topbar span{opacity:.75}
+.living-codex-overlay iframe{border:0;width:100%;flex:1;min-height:0}
+@media(max-width:640px){.living-codex-topbar span{display:none}}
+</style></head>
 <body>
 <canvas id="shaderCanvas" class="ambient-canvas shader-canvas" aria-hidden="true"></canvas>
 <canvas id="fxCanvas" class="ambient-canvas fx-canvas" aria-hidden="true"></canvas>
