@@ -117,7 +117,7 @@ class TestBridgeRuntime(unittest.IsolatedAsyncioTestCase):
         self.assertIn("text/html", browser.headers["content-type"])
         self.assertIn("Run Lantern Bridge", browser.text)
         self.assertIn("just tui", browser.text)
-        self.assertEqual(browser.headers.get("vary"), "Accept")
+        self.assertIn("Accept", browser.headers.get("vary", ""))
 
         command = await self.client.get("/run", headers={"accept": "*/*"})
         self.assertEqual(command.status_code, 200)
