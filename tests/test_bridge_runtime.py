@@ -111,6 +111,24 @@ class TestBridgeRuntime(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual([p["id"] for p in response.json()["providers"]], ["chatgpt", "ollama"])
 
+    async def test_run_shows_browser_guide_but_stays_pipeable_from_curl(self):
+        browser = await self.client.get("/run", headers={"accept": "text/html"})
+        self.assertEqual(browser.status_code, 200)
+        self.assertIn("text/html", browser.headers["content-type"])
+        self.assertIn("Run Lantern Bridge", browser.text)
+        self.assertIn("just tui", browser.text)
+        self.assertEqual(browser.headers.get("vary"), "Accept")
+
+        command = await self.client.get("/run", headers={"accept": "*/*"})
+        self.assertEqual(command.status_code, 200)
+        self.assertTrue(command.text.startswith("#!/bin/sh"))
+        self.assertIn("text/plain", command.headers["content-type"])
+        self.assertIn("lantern-", command.text)
+
+        direct = await self.client.get("/run.sh", headers={"accept": "text/html"})
+        self.assertEqual(direct.status_code, 200)
+        self.assertEqual(direct.text, command.text)
+
     async def test_tui_status_is_local_and_exposes_no_secrets(self):
         response = await self.client.get("/api/bridge/status")
         self.assertEqual(response.status_code, 200)
