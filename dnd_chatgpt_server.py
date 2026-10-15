@@ -1325,7 +1325,7 @@ go build -o lantern .
 export LANTERN_BRIDGE_SCRIPT="$(realpath ../dnd_chatgpt_server.py)"
 ./lantern start
 ./lantern</pre>
-<p>Requires Go 1.24+ and <span class="inline">uv</span>. Alternatively, run
+<p>Requires Go 1.26+ and <span class="inline">uv</span>. Alternatively, run
 <span class="inline">just tui</span> from the repository root to build and launch it.</p>
 <h2>Control your Bridge</h2>
 <pre>lantern status
