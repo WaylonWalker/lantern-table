@@ -1681,5 +1681,37 @@ function renderCharacterFull(){
   $$('[data-char-path]').forEach(x=>x.onchange=()=>editCharacterPath(x.dataset.charPath,x.type==='checkbox'?x.checked:x.value,x.dataset.charType||'text'));$$('[data-char-list]').forEach(x=>x.onchange=()=>editCharacterList(x.dataset.charList,x.value));$$('[data-roll-ability]').forEach(x=>x.onclick=()=>rollAbility(x.dataset.rollAbility,x.dataset.rollLabel));mountCharacterSheetTabs();enhanceHomebrewWorkshop();renderScratchCharacter();const portrait=getAssetUrl(c.portraitAssetId);$('portraitSlot').classList.toggle('has-image',!!portrait);$('portraitSlot').style.backgroundImage=portrait?`url("${portrait}")`:'';$('partyList').innerHTML=state.characters.map(ch=>`<div class="party-member"><div class="avatar">${esc(ch.name[0]||'?')}</div><div class="meta"><b>${esc(ch.name)}</b><small>${esc(ch.class)} · Lv ${ch.level} · ${esc(ch.location||state.scene.location)}</small></div><span>${ch.hp}/${ch.maxHp} HP</span></div>`).join('')}
 renderCharacter=renderCharacterFull;
 
+// Publish an ephemeral, deliberately small party projection to the host-local TUI.
+// The browser remains authoritative for all game data; the public server never stores it.
+async function publishBridgePartySummary(){
+  if(!['host','solo'].includes(rtc.role)||joinIntent||!state?.campaign||!AI_BASE&&appConfig?.mode==='public')return;
+  const numberOrNull=value=>Number.isFinite(Number(value))&&value!==null&&value!==''?Number(value):null;
+  const summary={
+    role:rtc.role,
+    campaign:String(state.campaign.name||'').slice(0,90),
+    session:numberOrNull(state.campaign.session),
+    scene:String(state.scene?.title||'').slice(0,90),
+    location:String(state.scene?.location||'').slice(0,90),
+    encounter:state.combat?.active?String(state.combat?.name||'In combat').slice(0,90):'',
+    players:Object.keys(rtc.peers||{}).length+1,
+    characters:(state.characters||[]).slice(0,60).map(ch=>({
+      name:String(ch.name||'').slice(0,90),
+      class:String(ch.class||'').slice(0,90),
+      level:numberOrNull(ch.level),
+      hp:numberOrNull(ch.hp),
+      max_hp:numberOrNull(ch.maxHp),
+      ac:numberOrNull(ch.ac),
+      conditions:(Array.isArray(ch.conditions)?ch.conditions:[]).filter(v=>typeof v==='string').slice(0,12).map(v=>v.slice(0,40))
+    }))
+  };
+  try{
+    await fetch((AI_BASE||'')+'/api/bridge/party',{
+      method:'POST',headers:{'Content-Type':'application/json','X-Lantern-Host-Snapshot':'1'},
+      body:JSON.stringify(summary),signal:AbortSignal.timeout(1800)
+    });
+  }catch{/* TUI sync is optional; never interrupt game play. */}
+}
+setInterval(()=>{void publishBridgePartySummary()},5000);
+
 // Startup ------------------------------------------------------------------------
 (async()=>{try{const response=await fetch('/assets/audio/catalog.json?v=starter-cc0-1',{cache:'force-cache'});if(!response.ok)throw Error(`Catalog request failed: ${response.status}`);const catalog=await response.json();validateCatalog(catalog);audioCatalog=catalog.sounds;audioEngine=new TableAudio(audioCatalog,()=>state.audio,needed=>{$('audioUnlock').classList.toggle('hidden',!needed)});audioEngine.preloadSfx(state.audio.quick);audioEngine.syncState(state.sharedAudio)}catch(error){console.warn('[Lantern audio] catalog unavailable',error)}initWizard();initDraw();initDictation();setInterval(()=>{if(rtc.role!=='player'&&!session.connected&&!session.checking)probeCompanion(false)},15000);await loadAssetUrls().catch(()=>{});await bootConfig();if(joinIntent){rtc.role='player';rtc.room=joinIntent;state.multiplayer.role='player';state.multiplayer.lastRoom=joinIntent;render();applyAtmosphere(state.atmosphere,{silent:true});document.documentElement.classList.remove('booting');setTimeout(()=>rtc.join(joinIntent),120);return}persistCampaignSnapshot();render();if((state.audio.actorEngine||'kitten2')==='kitten2')refreshKittenVoices();else startActorVoiceEngine();setInterval(()=>{if(kittenStatus.state==='starting'&&rtc.role!=='player')refreshKittenVoices()},5000);applyAtmosphere(state.atmosphere,{silent:true});document.documentElement.classList.remove('booting');if(historicalSessionId){showView('session-history')}else if(initialHash.get('campaign')){showView('campaign')}if(state.campaign.started&&state.multiplayer.lastRoom&&appConfig.signaling){const previousRole=state.multiplayer.role;if(previousRole==='host'){setTimeout(()=>rtc.startHost(state.multiplayer.lastRoom),350);setTimeout(()=>startDMOpening(),750)}else if(previousRole==='player')setTimeout(()=>rtc.join(state.multiplayer.lastRoom),500)}else if(state.campaign.started&&state.multiplayer.role!=='player'){setTimeout(()=>startDMOpening(),450)}})();
