@@ -313,6 +313,135 @@ async def stop_kitten_worker():
         except asyncio.TimeoutError: process.kill()
     await stop_kitten_fast_worker()
 
+
+# Lantern Bridge TUI observability: metadata only, never transcripts or credentials.
+from collections import deque
+BRIDGE_BOOTED_AT = time.monotonic()
+bridge_events = deque(maxlen=80)
+bridge_party = {}
+bridge_party_at = 0.0
+bridge_dm = {"phase": "idle", "provider": "", "model": "", "active": 0, "completed": 0, "failed": 0}
+bridge_audio = {"phase": "idle", "active": 0, "completed": 0, "failed": 0}
+
+def bridge_record(component: str, phase: str, detail: str = "") -> None:
+    bridge_events.append({"at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                          "component": component, "phase": phase, "detail": str(detail)[:90]})
+
+async def bridge_track_dm(events: AsyncIterator[str], provider: str) -> AsyncIterator[str]:
+    """Mirror existing SSE without changing the wire protocol or storing generated text."""
+    bridge_dm["active"] += 1
+    bridge_dm.update(phase="thinking", provider=provider)
+    bridge_record("dm", "started", provider)
+    result = "interrupted"
+    try:
+        async for event in events:
+            if event.startswith("event: "):
+                kind = event[7:].splitlines()[0]
+                if kind == "meta":
+                    try:
+                        payload = json.loads(event.split("data: ", 1)[1].splitlines()[0])
+                        bridge_dm["model"] = str(payload.get("model") or "")[:80]
+                        bridge_dm["phase"] = str(payload.get("phase") or "thinking")[:40]
+                    except (IndexError, ValueError, TypeError):
+                        pass
+                elif kind == "delta":
+                    bridge_dm["phase"] = "streaming"
+                elif kind in {"tool", "tool_status"}:
+                    bridge_dm["phase"] = "tools"
+                elif kind == "error":
+                    result = "failed"
+                elif kind == "done":
+                    result = "completed"
+            yield event
+    except Exception:
+        result = "failed"
+        raise
+    finally:
+        bridge_dm["active"] = max(0, bridge_dm["active"] - 1)
+        bridge_dm["completed" if result == "completed" else "failed"] += 1
+        bridge_dm["phase"] = "idle" if bridge_dm["active"] == 0 else bridge_dm["phase"]
+        bridge_record("dm", result, provider)
+
+@app.middleware("http")
+async def bridge_audio_tracking(request: Request, call_next):
+    if MODE == "public" or request.url.path != "/api/kitten/synthesize":
+        return await call_next(request)
+    bridge_audio["active"] += 1
+    bridge_audio["phase"] = "synthesizing"
+    bridge_record("audio", "started", "KittenTTS")
+    ok = False
+    try:
+        response = await call_next(request)
+        ok = response.status_code < 400
+        return response
+    finally:
+        bridge_audio["active"] = max(0, bridge_audio["active"] - 1)
+        bridge_audio["completed" if ok else "failed"] += 1
+        bridge_audio["phase"] = "idle" if bridge_audio["active"] == 0 else "synthesizing"
+        bridge_record("audio", "completed" if ok else "failed", "KittenTTS")
+
+@app.get("/api/bridge/status")
+async def bridge_tui_status():
+    if MODE == "public":
+        raise HTTPException(404, "Local companion only")
+    party = bridge_party if time.monotonic() - bridge_party_at < 30 else {}
+    return {"version": 1, "online": True, "pid": os.getpid(),
+            "uptime_seconds": round(time.monotonic() - BRIDGE_BOOTED_AT),
+            "dm": dict(bridge_dm), "audio": dict(bridge_audio),
+            "kitten": {k: _kitten_info.get(k) for k in ("state", "loaded", "model", "error")},
+            "fast_voice": {k: _kitten_fast_info.get(k) for k in ("state", "loaded", "model", "error")},
+            "party": party, "events": list(bridge_events)}
+
+@app.post("/api/bridge/party")
+async def bridge_host_party_summary(request: Request):
+    """Ephemeral and read-only; hosts opt in by publishing a tiny projection."""
+    global bridge_party, bridge_party_at
+    if MODE == "public":
+        raise HTTPException(404, "Local companion only")
+    allowed = {"https://dnd.waylonwalker.com", f"http://localhost:{PORT}", f"http://127.0.0.1:{PORT}"}
+    allowed.update(o.strip() for o in os.environ.get("LANTERN_CORS_ORIGINS", "").split(",") if o.strip())
+    if request.headers.get("origin") not in allowed or request.headers.get("x-lantern-host-snapshot") != "1":
+        raise HTTPException(403, "Host browser origin required")
+    if "application/json" not in request.headers.get("content-type", ""):
+        raise HTTPException(415, "JSON required")
+    raw = await request.body()
+    if len(raw) > 12000:
+        raise HTTPException(413, "Party summary too large")
+    try:
+        body = json.loads(raw)
+    except ValueError:
+        raise HTTPException(400, "Invalid JSON")
+    if not isinstance(body, dict) or body.get("role") not in {"host", "solo"}:
+        raise HTTPException(400, "Host-only summary")
+    def short(v, limit=90):
+        return str(v if v is not None else "")[:limit]
+    def bounded_number(v):
+        return v if isinstance(v, (int, float)) and not isinstance(v, bool) and -999999 < v < 999999 else None
+    chars = body.get("characters", [])
+    if not isinstance(chars, list):
+        chars = []
+    safe_chars = []
+    for c in chars[:60]:
+        if not isinstance(c, dict):
+            continue
+        conditions = c.get("conditions", [])
+        if not isinstance(conditions, list):
+            conditions = []
+        safe_chars.append({"name": short(c.get("name")), "class": short(c.get("class")),
+                           "level": bounded_number(c.get("level")),
+                           "hp": bounded_number(c.get("hp")),
+                           "max_hp": bounded_number(c.get("max_hp")),
+                           "ac": bounded_number(c.get("ac")),
+                           "conditions": [short(v, 40) for v in conditions[:12] if isinstance(v, str)]})
+    bridge_party = {"campaign": short(body.get("campaign")),
+                    "session": bounded_number(body.get("session")),
+                    "scene": short(body.get("scene")), "location": short(body.get("location")),
+                    "encounter": short(body.get("encounter")),
+                    "role": "host", "players": bounded_number(body.get("players")) or 1,
+                    "characters": safe_chars, "updated_at": datetime.now(timezone.utc).isoformat(timespec="seconds")}
+    bridge_party_at = time.monotonic()
+    return {"ok": True, "characters": len(safe_chars)}
+
 @app.get("/api/kitten/status")
 async def kitten_status(request: Request):
     require_local_kitten(request); return dict(_kitten_info)
@@ -1156,6 +1285,12 @@ async def pwa_manifest():
 @app.get("/service-worker.js")
 async def pwa_service_worker():
     return FileResponse(HERE / "service-worker.js", media_type="application/javascript", headers={"Cache-Control": "no-cache", "Service-Worker-Allowed": "/"})
+
+
+@app.get("/run")
+async def installer_script():
+    return FileResponse(HERE / "scripts" / "install-lantern.sh", media_type="text/x-shell",
+                        headers={"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"})
 
 
 @app.get("/download/bridge.py")
@@ -2003,12 +2138,12 @@ async def api_dm_stream(request: Request):
         await prepare_ollama_model(model, profile_id)
         profile = next(item for item in profile_plans(models, hardware_snapshot())["profiles"] if item["id"] == profile_id)
         body["context"] = profile["context"]
-        return StreamingResponse(ollama_dm_events(body, model), media_type="text/event-stream", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+        return StreamingResponse(bridge_track_dm(ollama_dm_events(body, model), "ollama"), media_type="text/event-stream", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
     if provider == "codex":
         requested_model = body.get("codex_model")
         if requested_model is not None and not isinstance(requested_model, str):
             raise HTTPException(400, "Codex model must be a string")
-        return StreamingResponse(codex_dm_events(body, requested_model.strip() if requested_model else None), media_type="text/event-stream", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+        return StreamingResponse(bridge_track_dm(codex_dm_events(body, requested_model.strip() if requested_model else None), "codex"), media_type="text/event-stream", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
     if provider != "chatgpt":
         raise HTTPException(400, "Unsupported DM provider")
     creds = await auth_creds()
@@ -2147,7 +2282,7 @@ async def api_dm_stream(request: Request):
             yield sse("error", {"message": f"DM stream error: {exc}"})
 
     return StreamingResponse(
-        events(),
+        bridge_track_dm(events(), "chatgpt"),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
