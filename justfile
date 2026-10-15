@@ -23,7 +23,7 @@ image:
 tui:
     #!/usr/bin/env bash
     set -euo pipefail
-    command -v go >/dev/null || { echo "Go 1.24+ is required" >&2; exit 1; }
+    command -v go >/dev/null || { echo "Go 1.26+ is required" >&2; exit 1; }
     bin_dir="${XDG_CACHE_HOME:-$HOME/.cache}/lantern-table/bin"
     mkdir -p "$bin_dir"
     go -C companion mod tidy
