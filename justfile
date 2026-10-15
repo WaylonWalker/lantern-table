@@ -146,6 +146,9 @@ doctor:
     python scripts/check_websocket.py "${LANTERN_PUBLIC_URL:-https://dnd.waylonwalker.com}"
     @echo "== Host-authoritative WSS gameplay protocol =="
     python scripts/wss_multiplayer_smoke.py "${LANTERN_PUBLIC_URL:-https://dnd.waylonwalker.com}"
+    @echo "== Installer guide and curl source =="
+    curl -fsSL --max-time 12 -H "Accept: text/html" "${LANTERN_PUBLIC_URL:-https://dnd.waylonwalker.com}/run" | grep "Run Lantern Bridge" >/dev/null
+    curl -fsSL --max-time 12 -H "Accept: */*" "${LANTERN_PUBLIC_URL:-https://dnd.waylonwalker.com}/run" | grep '^#!/bin/sh' >/dev/null
     @echo "== Runtime config =="
     curl -fsS https://dnd.waylonwalker.com/api/config; echo
     @echo "Lantern Table doctor passed"
