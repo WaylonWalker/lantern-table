@@ -265,6 +265,26 @@ func stop() error {
 	}
 	return proc.Signal(syscall.SIGTERM)
 }
+func restartManaged() error {
+    if err := stop(); err != nil {
+        return err
+    }
+    // Do not reattach to the old process while it is shutting down.
+    for i := 0; i < 80; i++ {
+        pid, pidErr := readPID()
+        if pidErr != nil || !isLanternDaemon(pid) {
+            ctx, cancel := context.WithTimeout(context.Background(), 250*time.Millisecond)
+            occupied := running(ctx)
+            cancel()
+            if !occupied {
+                return spawn()
+            }
+        }
+        time.Sleep(100*time.Millisecond)
+    }
+    return errors.New("Bridge shutdown timed out; restart not attempted")
+}
+
 func daemon() error {
 	root, err := runtimeDir()
 	if err != nil {
@@ -277,9 +297,17 @@ func daemon() error {
 	}
 	lock, err := os.OpenFile(pidfile, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
 	if os.IsExist(err) {
-		_ = os.Remove(pidfile)
-		lock, err = os.OpenFile(pidfile, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
-	}
+        if info, statErr := os.Stat(pidfile); statErr == nil && time.Since(info.ModTime()) < 4*time.Second {
+            return errors.New("another Lantern daemon may be starting")
+        }
+        if oldPID, readErr := readPID(); readErr == nil && isLanternDaemon(oldPID) {
+            return errors.New("Lantern daemon already active")
+        }
+        if removeErr := os.Remove(pidfile); removeErr != nil {
+            return removeErr
+        }
+        lock, err = os.OpenFile(pidfile, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
+    }
 	if err != nil {
 		return err
 	}
@@ -333,14 +361,15 @@ func daemon() error {
 	}
 }
 func tailLogs(n int) string {
-	b, err := os.ReadFile(logPath())
-	if err != nil {
-		return "No log file yet. Start the Bridge to see logs."
-	}
-	// bound rendered data even when a log has grown large
-	if len(b) > 256*1024 {
-		b = b[len(b)-256*1024:]
-	}
+	log, err := os.Open(logPath())
+    if err != nil { return "No log file yet. Start the Bridge to see logs." }
+    defer log.Close()
+    info, err := log.Stat()
+    if err != nil { return "Could not stat Bridge log." }
+    offset := info.Size() - 256*1024
+    if offset > 0 { _, _ = log.Seek(offset, io.SeekStart) }
+    b, err := io.ReadAll(io.LimitReader(log, 256*1024))
+    if err != nil { return "Could not read Bridge log." }
 	lines := strings.Split(strings.TrimRight(string(b), "\n"), "\n")
 	if len(lines) > n {
 		lines = lines[len(lines)-n:]
