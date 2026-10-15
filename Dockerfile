@@ -28,6 +28,7 @@ RUN python -c "import websockets; import uvicorn.protocols.websockets.websockets
 
 COPY --chown=lantern:lantern dnd_chatgpt_server.py dnd_localfirst_demo.html manifest.webmanifest service-worker.js ./
 COPY --chown=lantern:lantern assets ./assets
+COPY --chown=lantern:lantern scripts/install-lantern.sh ./scripts/install-lantern.sh
 COPY --chown=lantern:lantern CREDITS.md ./CREDITS.md
 
 USER 1000:1000
