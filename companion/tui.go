@@ -74,11 +74,7 @@ func execute(command string) tea.Cmd {
 		case "stop":
 			err = stop()
 		case "restart":
-			err = stop()
-			if err == nil {
-				time.Sleep(700 * time.Millisecond)
-				err = spawn()
-			}
+            err = restartManaged()
 		}
 		return actionMsg{Text: command, Err: err}
 	}
