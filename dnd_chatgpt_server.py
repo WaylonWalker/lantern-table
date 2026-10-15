@@ -1148,6 +1148,16 @@ async def favicon():
     return Response(status_code=204)
 
 
+@app.get("/manifest.webmanifest")
+async def pwa_manifest():
+    return FileResponse(HERE / "manifest.webmanifest", media_type="application/manifest+json", headers={"Cache-Control": "public, max-age=3600"})
+
+
+@app.get("/service-worker.js")
+async def pwa_service_worker():
+    return FileResponse(HERE / "service-worker.js", media_type="application/javascript", headers={"Cache-Control": "no-cache", "Service-Worker-Allowed": "/"})
+
+
 @app.get("/download/bridge.py")
 async def download_companion():
     return FileResponse(Path(__file__).resolve(), media_type="text/x-python", filename="lantern_bridge.py")

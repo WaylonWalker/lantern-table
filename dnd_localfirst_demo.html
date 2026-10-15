@@ -4,8 +4,13 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
 <meta name="theme-color" content="#0d1017" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="Lantern Table" />
 <title>Lantern Table — local-first D&D</title>
 <link rel="icon" type="image/svg+xml" href="/assets/logo.svg?v=1" />
+<link rel="apple-touch-icon" href="/assets/apple-touch-icon.png" />
+<link rel="manifest" href="/manifest.webmanifest" />
 <link rel="stylesheet" href="/assets/app.css?v=glow-pointer-1" />
 <link rel="stylesheet" href="/assets/dnd-fx.css" />
 <script defer referrerpolicy="no-referrer" src="https://telemetry.wayl.one/assets/faro-bootstrap.js" data-faro-app="lantern-table" data-faro-version="unknown" data-faro-environment="production"></script>
@@ -87,6 +92,7 @@
       <button id="mobileCampaignsOpen" class="icon-button mobile-campaigns-open" aria-label="Open campaigns">☰</button>
       <div class="scene-title-wrap"><div class="eyebrow" id="sceneEyebrow">Current scene</div><h2 id="topSceneTitle">Lantern Room</h2></div>
       <div class="top-actions">
+        <button id="installApp" class="button compact" type="button" hidden>Install</button>
         <button id="themeQuick" class="icon-button" title="Atmosphere"><span aria-hidden="true">◐</span></button>
         <button id="audioQuick" class="icon-button" title="Open audio soundboard" aria-label="Open audio soundboard"><img src="/assets/icons/tabler/volume-2.svg" alt=""/></button>
         <button id="worldNotesQuick" class="icon-button" title="World notes" aria-label="World notes"><img src="/assets/icons/tabler/book-2.svg" alt=""/></button>
@@ -215,6 +221,7 @@
 <div id="audioSheet" class="bottom-sheet audio-sheet hidden" role="dialog" aria-modal="true" aria-labelledby="audioTitle"><div class="sheet-backdrop" data-close-sheet></div><section class="sheet-card glass audio-card"><div class="sheet-handle"></div><div class="audio-heading"><div><div class="eyebrow">Soundboard</div><h3 id="audioTitle">Table audio</h3></div><button id="audioUnlock" class="button compact hidden" type="button">Enable audio</button><button class="icon-button" data-close-sheet aria-label="Close audio">×</button></div><div id="audioQuickSounds" class="audio-quick"></div><label class="audio-search-label">Search sounds<input id="audioSearch" type="search" placeholder="Door, metal, forest…" /></label><div id="audioTabs" class="audio-tabs"><button data-audio-tab="sfx">Sounds</button><button data-audio-tab="ambience">Ambience</button><button data-audio-tab="music">Music</button><button data-audio-tab="favorites">Favorites</button></div><div id="audioCatalogList" class="audio-catalog-list"></div><div class="audio-stops"><button id="stopAmbience" class="button" type="button">Stop Ambience</button><button id="stopMusic" class="button" type="button">Stop Music</button></div><details class="audio-mixer" open><summary>My audio levels</summary><div id="audioMixerControls"></div></details><label class="toggle-row audio-ai-setting"><span><b>AI may trigger audio</b><small>Let the AI DM request cues from this catalog.</small></span><input id="aiAudioEnabled" type="checkbox" /></label><p class="audio-local-note">Volumes and mute affect only this browser. Shared playback is controlled by the host.</p></section></div>
 <input id="portraitUpload" type="file" accept="image/*" hidden />
  <script defer src="/assets/dnd-fx.js?v=pointer-perf-1"></script>
+ <script type="module" src="/assets/pwa.js"></script>
  <script type="module" src="/assets/app.js?v=dm-faro-1"></script>
 </body>
 </html>
