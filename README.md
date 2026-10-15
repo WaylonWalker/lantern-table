@@ -139,6 +139,50 @@ https://dnd.waylonwalker.com/#join=ABCD-123
 
 A joining browser bypasses campaign creation, connects to signaling, receives the host snapshot, then removes the temporary join fragment from the address bar.
 
+## Lantern Bridge 2.0 terminal companion (Go)
+
+The host can manage Lantern Bridge with a six-tab terminal dashboard. The Go
+launcher supervises the existing Python AI/audio runtime; game state remains
+host-browser authoritative.
+
+After the public site has deployed this change **and a `lantern-v*` GitHub
+Release is published**, install on Linux or macOS with:
+
+```sh
+curl -fsSL https://dnd.waylonwalker.com/run | sh
+lantern
+```
+
+The installer detects OS/architecture, downloads a prebuilt binary and bundled
+`uv`/Bridge files, and verifies the GitHub release SHA256 before installing to
+`~/.local/share/lantern` and linking `~/.local/bin/lantern`. Add
+`~/.local/bin` to `PATH` if necessary. Alternatively, download and inspect
+`/run` before running it. No root permission is needed.
+
+Available commands: `lantern start`, `lantern stop`, `lantern restart`,
+`lantern status [--json]`, `lantern logs`, `lantern doctor`, and
+`lantern version`. In the TUI, tabs use 1–6 or Tab/Shift+Tab, ↑↓ scroll logs,
+`s` starts, `x` stops, `r` restarts, `?` shows help, and `q` **detaches**
+without stopping the Bridge.
+
+The Bridge binds to `127.0.0.1:8768`, keeps credentials in the original
+private configuration directory, and exposes `/api/bridge/status` locally.
+When the hosted game is open as host, the browser sends a bounded character
+summary directly to the loopback Bridge. No character notes, transcripts, or
+secrets are included in that projection, and the public service does not
+persist campaign state. The summary expires after 30 seconds.
+
+**Current scope:** ChatGPT OAuth, Codex CLI and Ollama still run through the
+existing Python providers; the Go TUI does not replace their implementations.
+The Campaign tab provides deterministic DM-prep reminders, not autonomous AI
+decision-making. Native Windows binaries and installation are not published
+yet. A GitHub release is required before the one-line installer works.
+
+For local development, run `go run .` from `companion/` and set
+`LANTERN_BRIDGE_SCRIPT` to a checkout of `dnd_chatgpt_server.py`; provide
+`uv` on `PATH`. GitHub Actions validates the CLI on pull requests and builds
+release bundles when a `lantern-v*` tag is pushed.
+
 ## Public service vs local Lantern Bridge
 
 OpenAI's current open-source Sign in with ChatGPT plan-sharing flow uses a loopback callback on the user's own device. Because of that, the Kubernetes pod is deliberately **not** the holder of user ChatGPT credentials.
