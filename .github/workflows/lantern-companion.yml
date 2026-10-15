@@ -66,11 +66,11 @@ jobs:
           TARGET: lantern-${{ matrix.os }}-${{ matrix.arch }}
         run: |
           set -euo pipefail
+          mkdir -p stage/bridge dist
           cd companion
           go mod tidy
           go build -trimpath -ldflags "-s -w -X main.buildVersion=${GITHUB_REF_NAME}" -o ../stage/lantern .
           cd ..
-          mkdir -p stage/bridge dist
           cp dnd_chatgpt_server.py dnd_localfirst_demo.html service-worker.js manifest.webmanifest stage/bridge/
           cp -R assets stage/bridge/
           cp "$(command -v uv)" stage/bridge/uv
