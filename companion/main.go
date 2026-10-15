@@ -37,11 +37,7 @@ func mainErr(args []string) error {
 	case "stop":
 		return stop()
 	case "restart":
-		if err := stop(); err != nil {
-			return err
-		}
-		time.Sleep(time.Second)
-		return spawn()
+        return restartManaged()
 	case "daemon":
 		return daemon()
 	case "status":
