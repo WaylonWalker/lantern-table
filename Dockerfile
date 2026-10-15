@@ -26,7 +26,7 @@ RUN uv pip install --system \
 # Fail the image build if Uvicorn cannot load its WebSocket protocol.
 RUN python -c "import websockets; import uvicorn.protocols.websockets.websockets_impl"
 
-COPY --chown=lantern:lantern dnd_chatgpt_server.py dnd_localfirst_demo.html ./
+COPY --chown=lantern:lantern dnd_chatgpt_server.py dnd_localfirst_demo.html manifest.webmanifest service-worker.js ./
 COPY --chown=lantern:lantern assets ./assets
 COPY --chown=lantern:lantern CREDITS.md ./CREDITS.md
 
