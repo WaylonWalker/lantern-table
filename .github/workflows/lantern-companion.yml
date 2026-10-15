@@ -7,6 +7,10 @@ on:
       - '.github/workflows/lantern-companion.yml'
       - 'dnd_chatgpt_server.py'
       - 'assets/app.js'
+      - 'service-worker.js'
+      - 'tests/service_worker_routes.test.mjs'
+      - 'justfile'
+      - 'README.md'
   push:
     branches: [main]
     tags: ['lantern-v*']
@@ -16,6 +20,8 @@ on:
       - '.github/workflows/lantern-companion.yml'
       - 'dnd_chatgpt_server.py'
       - 'assets/app.js'
+      - 'service-worker.js'
+      - 'tests/service_worker_routes.test.mjs'
       - 'justfile'
       - 'README.md'
   workflow_dispatch:
@@ -45,6 +51,8 @@ jobs:
           python -m py_compile dnd_chatgpt_server.py
           uv run --script tests/test_bridge_runtime.py
           node --check assets/app.js
+          node --check service-worker.js
+          node --test tests/service_worker_routes.test.mjs
           sh -n scripts/install-lantern.sh
   package:
     needs: validate
