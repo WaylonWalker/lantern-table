@@ -111,6 +111,47 @@ class TestBridgeRuntime(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual([p["id"] for p in response.json()["providers"]], ["chatgpt", "ollama"])
 
+    async def test_tui_status_is_local_and_exposes_no_secrets(self):
+        response = await self.client.get("/api/bridge/status")
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload["online"])
+        self.assertEqual(payload["version"], 1)
+        self.assertIn("dm", payload)
+        self.assertIn("audio", payload)
+        self.assertNotIn("credentials", payload)
+        self.assertNotIn("access_token", json.dumps(payload))
+
+    async def test_tui_party_projection_rejects_untrusted_origins_and_strips_notes(self):
+        payload = {
+            "role": "host", "campaign": "Test Campaign", "session": 3,
+            "characters": [{"name": "Mira", "class": "Rogue", "level": 5,
+                            "hp": 12, "max_hp": 25, "conditions": ["Poisoned"],
+                            "notes": "PRIVATE DM NOTES"}],
+        }
+        headers = {"origin": "https://evil.example", "x-lantern-host-snapshot": "1"}
+        denied = await self.client.post("/api/bridge/party", json=payload, headers=headers)
+        self.assertEqual(denied.status_code, 403)
+        headers["origin"] = "https://dnd.waylonwalker.com"
+        allowed = await self.client.post("/api/bridge/party", json=payload, headers=headers)
+        self.assertEqual(allowed.status_code, 200)
+        status = (await self.client.get("/api/bridge/status")).json()
+        self.assertEqual(status["party"]["characters"][0]["name"], "Mira")
+        self.assertNotIn("PRIVATE DM NOTES", json.dumps(status))
+        self.assertEqual(status["party"]["characters"][0]["hp"], 12)
+
+    async def test_tui_dm_activity_tracks_stream_lifecycle_without_text(self):
+        async def sample_events():
+            yield 'event: meta\\ndata: {"model":"example-model","phase":"thinking"}\\n\\n'
+            yield 'event: delta\\ndata: {"delta":"secret generated narration"}\\n\\n'
+            yield 'event: done\\ndata: {}\\n\\n'
+        captured = [line async for line in bridge.bridge_track_dm(sample_events(), "ollama")]
+        self.assertEqual(len(captured), 3)
+        status = (await self.client.get("/api/bridge/status")).json()
+        self.assertEqual(status["dm"]["phase"], "idle")
+        self.assertEqual(status["dm"]["model"], "example-model")
+        self.assertNotIn("secret generated narration", json.dumps(status))
+
     async def test_kitten_cuda_oom_is_recognized_for_cpu_retry(self):
         self.assertTrue(bridge.kitten_cuda_oom("OutOfMemoryError: CUDA out of memory. Tried to allocate 24.00 MiB"))
         self.assertFalse(bridge.kitten_cuda_oom("ImportError: KittenML dependencies are unavailable"))
