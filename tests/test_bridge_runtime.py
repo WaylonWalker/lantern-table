@@ -142,9 +142,9 @@ class TestBridgeRuntime(unittest.IsolatedAsyncioTestCase):
 
     async def test_tui_dm_activity_tracks_stream_lifecycle_without_text(self):
         async def sample_events():
-            yield 'event: meta\\ndata: {"model":"example-model","phase":"thinking"}\\n\\n'
-            yield 'event: delta\\ndata: {"delta":"secret generated narration"}\\n\\n'
-            yield 'event: done\\ndata: {}\\n\\n'
+            yield 'event: meta\ndata: {"model":"example-model","phase":"thinking"}\n\n'
+            yield 'event: delta\ndata: {"delta":"secret generated narration"}\n\n'
+            yield 'event: done\ndata: {}\n\n'
         captured = [line async for line in bridge.bridge_track_dm(sample_events(), "ollama")]
         self.assertEqual(len(captured), 3)
         status = (await self.client.get("/api/bridge/status")).json()
