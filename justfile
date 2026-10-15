@@ -18,6 +18,19 @@ default:
 image:
     @echo "{{image}}"
 
+# Build and launch the Go companion TUI from a source checkout.
+# The stable binary path lets its managed Bridge survive detaching the terminal.
+tui:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    command -v go >/dev/null || { echo "Go 1.24+ is required" >&2; exit 1; }
+    bin_dir="${XDG_CACHE_HOME:-$HOME/.cache}/lantern-table/bin"
+    mkdir -p "$bin_dir"
+    go -C companion mod tidy
+    go -C companion build -o "$bin_dir/lantern" .
+    export LANTERN_BRIDGE_SCRIPT="$PWD/dnd_chatgpt_server.py"
+    exec "$bin_dir/lantern"
+
 # Run the host-side OAuth/AI companion locally.
 companion:
     #!/usr/bin/env bash
