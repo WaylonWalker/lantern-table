@@ -27,9 +27,11 @@ jobs:
           go test ./...
           go vet ./...
           go build ./...
-      - name: Validate python + web client
+      - uses: astral-sh/setup-uv@v6
+      - name: Validate Python Bridge, web client and installer
         run: |
           python -m py_compile dnd_chatgpt_server.py
+          uv run --script tests/test_bridge_runtime.py
           node --check assets/app.js
           sh -n scripts/install-lantern.sh
   package:
