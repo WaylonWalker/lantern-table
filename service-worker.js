@@ -1,4 +1,4 @@
-const CACHE_NAME = "lantern-table-shell-v1";
+const CACHE_NAME = "lantern-table-shell-v2";
 const APP_SHELL = [
   "/",
   "/manifest.webmanifest",
@@ -24,11 +24,11 @@ self.addEventListener("activate", event => {
 self.addEventListener("fetch", event => {
   const request = event.request;
   const url = new URL(request.url);
-  if (request.method !== "GET" || url.origin !== self.location.origin || url.pathname.startsWith("/api/") || url.pathname.startsWith("/auth/") || url.pathname.startsWith("/ws/")) return;
+  if (request.method !== "GET" || url.origin !== self.location.origin || url.pathname.startsWith("/api/") || url.pathname.startsWith("/auth/") || url.pathname.startsWith("/ws/") || url.pathname === "/run" || url.pathname === "/run.sh" || url.pathname.startsWith("/download/")) return;
 
   if (request.mode === "navigate") {
     event.respondWith(fetch(request).then(response => {
-      if (response.ok) caches.open(CACHE_NAME).then(cache => cache.put("/", response.clone()));
+      if (response.ok && (url.pathname === "/" || url.pathname === "/index.html")) caches.open(CACHE_NAME).then(cache => cache.put("/", response.clone()));
       return response;
     }).catch(async () => (await caches.match("/")) || Response.error()));
     return;
