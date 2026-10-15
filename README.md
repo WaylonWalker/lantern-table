@@ -145,8 +145,9 @@ The host can manage Lantern Bridge with a six-tab terminal dashboard. The Go
 launcher supervises the existing Python AI/audio runtime; game state remains
 host-browser authoritative.
 
-After the public site has deployed this change **and a `lantern-v*` GitHub
-Release is published**, install on Linux or macOS with:
+The public site's [installation guide](https://dnd.waylonwalker.com/run)
+opens in a browser. On Linux or macOS, after GitHub Actions has published a
+[companion release](https://github.com/WaylonWalker/lantern-table/releases), install with:
 
 ```sh
 curl -fsSL https://dnd.waylonwalker.com/run | sh
@@ -176,12 +177,50 @@ persist campaign state. The summary expires after 30 seconds.
 existing Python providers; the Go TUI does not replace their implementations.
 The Campaign tab provides deterministic DM-prep reminders, not autonomous AI
 decision-making. Native Windows binaries and installation are not published
-yet. A GitHub release is required before the one-line installer works.
+yet. A published GitHub release is required for the one-line installer; the local checkout does not need one.
 
-For local development, run `go run .` from `companion/` and set
-`LANTERN_BRIDGE_SCRIPT` to a checkout of `dnd_chatgpt_server.py`; provide
-`uv` on `PATH`. GitHub Actions validates the CLI on pull requests and builds
-release bundles when a `lantern-v*` tag is pushed.
+### Run directly from a local checkout (no release needed)
+
+From the repository root, with **Go 1.24+**, **uv**, and `just` available:
+
+```bash
+just tui
+```
+
+The recipe installs Go dependencies, builds a stable `lantern` executable under
+`~/.cache/lantern-table/bin/`, points it at the local Python bridge, and launches
+the TUI. Press **s** to start the Bridge and **q** to detach. Quitting does not stop
+the background process.
+
+Without `just`, build and run it directly:
+
+```bash
+cd companion
+go mod tidy
+go build -o lantern .
+export LANTERN_BRIDGE_SCRIPT="$(realpath ../dnd_chatgpt_server.py)"
+./lantern start
+./lantern
+```
+
+From this same directory run `./lantern status`, `./lantern logs`, and
+`./lantern stop`. The Python Bridge needs `uv` in `PATH` on the host. If you
+already started the Bridge with `just companion`, stop that process before asking
+the Go supervisor to start its own. You can still use the TUI to observe an
+externally managed Bridge, but start/stop/restart act on **Go-managed** daemons only.
+
+`go run .` can preview the UI, but is **not supported for supervising a detached
+daemon**, because its temporary executable name changes. Use the built `lantern`
+binary or `just tui` when you want process controls.
+
+### Binary publishing
+
+GitHub Actions validates the companion in PRs, then builds and publishes Linux
+and macOS archives automatically when companion-related changes land on
+`main`. Existing `lantern-v*` tag pushes and manual workflow dispatch are also
+supported. Until the **first release completes**, the remote curl installer
+cannot work; running from the local checkout does not depend on that release.
+The installer checks SHA-256 checksums from the release and does not require sudo.
 
 ## Public service vs local Lantern Bridge
 
