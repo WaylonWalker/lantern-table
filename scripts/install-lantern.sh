@@ -26,8 +26,16 @@ BIN_DIR="${LANTERN_BIN_DIR:-${HOME}/.local/bin}"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT HUP INT TERM
 fetch() { curl --fail --location --silent --show-error --proto '=https' --tlsv1.2 "$1" -o "$2"; }
-fetch "$BASE/$ASSET" "$TMP/$ASSET"
-fetch "$BASE/SHA256SUMS" "$TMP/SHA256SUMS"
+if ! fetch "$BASE/$ASSET" "$TMP/$ASSET"; then
+  printf '%s\n' 'Lantern companion binary is not available yet for this platform.' >&2
+  printf '%s\n' 'Check releases: https://github.com/WaylonWalker/lantern-table/releases' >&2
+  printf '%s\n' 'Already have the source? Run: just tui (Go 1.26+ and uv required).' >&2
+  exit 1
+fi
+if ! fetch "$BASE/SHA256SUMS" "$TMP/SHA256SUMS"; then
+  echo 'Lantern release is missing SHA256SUMS; refusing to install unverified binaries.' >&2
+  exit 1
+fi
 EXPECTED="$(grep "  $ASSET\$" "$TMP/SHA256SUMS" | head -n 1 | cut -d ' ' -f1)"
 if [ -z "$EXPECTED" ]; then echo 'Release checksum not found' >&2; exit 1; fi
 if command -v sha256sum >/dev/null 2>&1; then

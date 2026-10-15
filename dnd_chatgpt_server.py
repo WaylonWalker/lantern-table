@@ -1287,10 +1287,56 @@ async def pwa_service_worker():
     return FileResponse(HERE / "service-worker.js", media_type="application/javascript", headers={"Cache-Control": "no-cache", "Service-Worker-Allowed": "/"})
 
 
-@app.get("/run")
+@app.get("/run.sh")
 async def installer_script():
-    return FileResponse(HERE / "scripts" / "install-lantern.sh", media_type="text/x-shell",
+    """Always return shell source, including for browsers and diagnostics."""
+    return FileResponse(HERE / "scripts" / "install-lantern.sh", media_type="text/plain",
                         headers={"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"})
+
+
+@app.get("/run")
+async def installer_guide(request: Request):
+    """Human guide in browsers; plain installer source for curl | sh."""
+    if "text/html" not in request.headers.get("accept", ""):
+        return await installer_script()
+    return Response("""<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Install Lantern Bridge | Lantern Table</title>
+<style>
+:root{color-scheme:dark}body{font:16px/1.65 system-ui,sans-serif;background:#17171e;color:#eeebef;margin:0}
+main{max-width:760px;margin:6vh auto;padding:24px}a{color:#efb978}h1{font-size:clamp(2rem,5vw,3.25rem);line-height:1.13}
+h2{margin-top:2em}.muted{color:#b5b1c2}code,pre{font:0.95rem/1.6 ui-monospace,SFMono-Regular,Consolas,monospace}
+pre{background:#272633;border:1px solid #4d4657;border-radius:12px;padding:20px;overflow:auto}
+.inline{background:#302d3a;border-radius:4px;padding:2px 5px}
+</style></head><body><main>
+<p class="muted">LANTERN TABLE / COMPANION</p>
+<h1>Run Lantern Bridge</h1>
+<p>Host your AI Dungeon Master with a six-tab terminal dashboard for logs, players, AI providers and campaign status.</p>
+<h2>Install on Linux or macOS</h2>
+<pre>curl -fsSL https://dnd.waylonwalker.com/run | sh
+lantern</pre>
+<p class="muted">Requires a published Lantern companion release. The installer downloads a signed-off-by-checksum
+release archive, verifies its SHA-256 digest and installs into your home directory. You can
+<a href="/run.sh">review the installer script</a> before running it.</p>
+<h2>Already have the source repository?</h2>
+<pre>cd lantern-table/companion
+go mod tidy
+go build -o lantern .
+export LANTERN_BRIDGE_SCRIPT="$(realpath ../dnd_chatgpt_server.py)"
+./lantern start
+./lantern</pre>
+<p>Requires Go 1.26+ and <span class="inline">uv</span>. Alternatively, run
+<span class="inline">just tui</span> from the repository root to build and launch it.</p>
+<h2>Control your Bridge</h2>
+<pre>lantern status
+lantern logs
+lantern stop</pre>
+<p>Keys: <span class="inline">1–6</span> switch tabs, <span class="inline">s</span> start,
+<span class="inline">x</span> stop, <span class="inline">r</span> restart and <span class="inline">q</span> detach.</p>
+<p><a href="https://github.com/WaylonWalker/lantern-table">Source &amp; documentation</a>
+&nbsp;·&nbsp; <a href="https://github.com/WaylonWalker/lantern-table/releases">Companion releases</a></p>
+</main></body></html>""", media_type="text/html", headers={"Cache-Control": "no-store", "Vary": "Accept",
+                                              "X-Content-Type-Options": "nosniff"})
 
 
 @app.get("/download/bridge.py")
