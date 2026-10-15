@@ -30,7 +30,7 @@ test('replay playback state is attached to the one visible transcript message no
   assert.match(app,/function startReceivedSpeech\(event\)/);
   const replay=app.slice(app.indexOf('async function replayActorSpeech'),app.indexOf('function handleActorSpeechSignal'));
   assert.match(replay,/api\/kitten\/audio\//);
-  assert.doesNotMatch(replay,/api\/kitten\/synthesize/);
+  assert.match(replay,/await prepareActorPerformance\(message,actor,actorVoiceProfile\(actor\)\)/);
 });
 
 test('persistent NPC creation assigns its runtime-catalogue voice immediately when available',async()=>{
