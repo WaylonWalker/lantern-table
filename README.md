@@ -181,7 +181,7 @@ yet. A published GitHub release is required for the one-line installer; the loca
 
 ### Run directly from a local checkout (no release needed)
 
-From the repository root, with **Go 1.24+**, **uv**, and `just` available:
+From the repository root, with **Go 1.26+**, **uv**, and `just` available:
 
 ```bash
 just tui
