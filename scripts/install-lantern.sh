@@ -29,7 +29,7 @@ fetch() { curl --fail --location --silent --show-error --proto '=https' --tlsv1.
 if ! fetch "$BASE/$ASSET" "$TMP/$ASSET"; then
   printf '%s\n' 'Lantern companion binary is not available yet for this platform.' >&2
   printf '%s\n' 'Check releases: https://github.com/WaylonWalker/lantern-table/releases' >&2
-  printf '%s\n' 'Already have the source? Run: just tui (Go 1.24+ and uv required).' >&2
+  printf '%s\n' 'Already have the source? Run: just tui (Go 1.26+ and uv required).' >&2
   exit 1
 fi
 if ! fetch "$BASE/SHA256SUMS" "$TMP/SHA256SUMS"; then
