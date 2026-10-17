@@ -1,0 +1,13 @@
+/* Character Sheet 2.0 progressive enhancement */
+.adaptive-sheet{margin-top:1.25rem;border-top:1px solid var(--border, #7775);padding-top:1rem}
+.adaptive-sheet>details>summary{cursor:pointer;font-weight:700;padding:.75rem 0}
+.adaptive-actions{display:flex;flex-wrap:wrap;gap:.5rem;margin:.8rem 0}
+.adaptive-section{margin:1rem 0;padding:1rem;min-width:0}
+.adaptive-heading{display:flex;gap:.5rem;flex-wrap:wrap;align-items:center}
+.adaptive-heading input{flex:1 1 12rem;min-width:0;font-weight:700}
+.adaptive-fields{display:grid;gap:.6rem;margin-top:.7rem}
+.adaptive-field{display:grid;grid-template-columns:minmax(90px,1fr) minmax(150px,2fr) auto;gap:.5rem;align-items:start}
+.adaptive-field textarea{width:100%;min-width:0;resize:vertical}
+.adaptive-field input{min-width:0;width:100%}
+.adaptive-section[draggable="true"]{cursor:grab;outline:1px dashed var(--accent,#e9b35f)}
+@media(max-width:650px){.adaptive-field{grid-template-columns:1fr auto}.adaptive-field textarea{grid-column:1/-1;grid-row:2}.adaptive-field button{grid-column:2;grid-row:1}}
